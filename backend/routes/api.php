@@ -81,6 +81,8 @@ Route::prefix('v1')->group(function () {
         Route::get('/clientes/{id}/acceso', [CustomerAccessController::class, 'show'])->middleware('permit:clientes.read')->where('id', '[a-f0-9]{24}');
         Route::patch('/clientes/{id}/acceso', [CustomerAccessController::class, 'update'])->name('clientes.acceso')->middleware('permit:clientes.manage')->where('id', '[a-f0-9]{24}');
         $post('/clientes/{id}/sesiones/cerrar', CustomerAccessController::class, 'closeSessions', 'clientes.sesiones', 'clientes.manage');
+        $post('/clientes/{id}/contrasena', CustomerAccessController::class, 'resetPassword', 'clientes.contrasena', 'clientes.manage');
+        $post('/usuarios/{id}/contrasena', AdminController::class, 'resetUserPassword', 'usuarios.contrasena', 'usuarios.write');
         $post('/planillas/{id}/autorizar', PayrollController::class, 'approve', 'planillas.approve', 'planillas.approve');
         Route::get('/riesgos/pendientes', [QueryController::class, 'riskPending'])->middleware('permit:riesgos.read');
         Route::get('/integraciones', [QueryController::class, 'integrations'])->middleware('permit:integraciones.read');

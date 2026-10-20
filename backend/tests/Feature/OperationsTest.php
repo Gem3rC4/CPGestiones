@@ -251,7 +251,7 @@ final class OperationsTest extends TestCase
         $company = Company::create(['nombre' => 'Empresa Test', 'nit' => 'EMP-1', 'cuenta_id' => (string) $source->id, 'miembros' => [(string) $operator->id, (string) $approver->id]]);
         $body = ['empresa_id' => (string) $company->id, 'nombre' => 'Planilla Test', 'pagos' => [['nombre' => 'Uno', 'cuenta_numero' => $a->numero, 'monto' => '60.00'], ['nombre' => 'Dos', 'cuenta_numero' => $b->numero, 'monto' => '60.00']]];
         $id = $this->postJson('/api/v1/planillas', $body, $this->headers($this->token($operator)))->assertCreated()->json('data.id');
-        $operator->update(['role' => 'administrador']);
+        $operator->update(['role' => 'gerente']);
         $this->postJson('/api/v1/planillas/'.$id.'/autorizar', [], $this->headers($this->token($operator)))->assertForbidden()->assertJsonPath('code', 'FOUR_EYES_REQUIRED');
         $this->postJson('/api/v1/planillas/'.$id.'/autorizar', [], $this->headers($this->token($approver)))->assertOk();
         try {
@@ -512,5 +512,43 @@ final class OperationsTest extends TestCase
         $fresh->update(['numero' => '5551234567']);
         $this->postJson('/api/v1/colaboradores', ['empresa_id' => (string) $company->id, 'nombre' => 'Nuevo Piloto', 'puesto' => 'Piloto', 'salario' => '5200.00', 'cuenta_numero' => '5551234567'], $this->headers())->assertCreated()->assertJsonPath('data.puesto', 'Piloto');
         $this->getJson('/api/v1/colaboradores?empresa_id='.$company->id.'&puesto=Piloto', $this->headers())->assertOk()->assertJsonPath('data.total', 3);
+    }
+
+    public function test_administrator_can_load_and_authorize_the_same_payroll(): void
+    {
+        $source = $this->account($this->customer('company-admin'), 50000);
+        $employee = $this->account($this->customer('employee-admin'), 0);
+        $company = Company::create(['nombre' => 'Empresa Admin', 'nit' => 'EMP-ADM', 'cuenta_id' => (string) $source->id, 'miembros' => []]);
+        $id = $this->postJson('/api/v1/planillas', ['empresa_id' => (string) $company->id, 'nombre' => 'Planilla del administrador', 'pagos' => [['nombre' => 'Uno', 'cuenta_numero' => $employee->numero, 'monto' => '100.00', 'puesto' => 'Piloto']]], $this->headers())->assertCreated()->json('data.id');
+        $this->postJson('/api/v1/planillas/'.$id.'/autorizar', [], $this->headers())->assertOk()->assertJsonPath('data.estado', 'en_cola');
+        app(PayrollService::class)->process($id);
+        self::assertSame(10000, $employee->refresh()->saldo_centavos);
+    }
+
+    public function test_staff_reset_customer_and_internal_user_passwords(): void
+    {
+        $customer = $this->customer('reset');
+        $customer->update(['email' => 'reset@example.test', 'password' => Hash::make('vieja2026'), 'active' => true, 'failed_attempts' => 5, 'locked_until' => now()->addMinutes(10)]);
+        CustomerSession::create(['token_hash' => hash('sha256', 'reset-session'), 'cliente_id' => (string) $customer->id, 'expires_at' => now()->addHour()]);
+        $path = '/api/v1/clientes/'.$customer->id.'/contrasena';
+        $this->postJson($path, ['contrasena' => 'nueva2026', 'nota' => 'Llamada del cliente'], $this->headers($this->token($this->user('cajero', 'cash-reset'))))->assertForbidden();
+        $this->postJson($path, ['contrasena' => 'sololetras', 'nota' => 'Llamada del cliente'], $this->headers())->assertUnprocessable()->assertJsonPath('errors.contrasena.0', 'Incluye al menos una letra y un número.');
+        $this->postJson($path, ['contrasena' => 'nueva2026', 'nota' => 'Llamada del cliente'], $this->headers())->assertOk()
+            ->assertJsonPath('data.contrasena_restablecida', true)->assertJsonPath('data.sesiones_cerradas', 1)->assertJsonPath('data.bloqueado_hasta', null)->assertJsonMissingPath('data.contrasena');
+        self::assertStringNotContainsString('nueva2026', IdempotencyRecord::latest()->first()->toJson());
+        $bank = app(AuthService::class)->issueService('banca');
+        $this->postJson('/api/v1/banca/auth/login', ['correo_electronico' => 'reset@example.test', 'contrasena' => 'vieja2026'], $this->headers($bank))->assertUnauthorized();
+        $this->postJson('/api/v1/banca/auth/login', ['correo_electronico' => 'reset@example.test', 'contrasena' => 'nueva2026'], $this->headers($bank))->assertOk();
+        $noEmail = $this->customer('no-email');
+        $this->postJson('/api/v1/clientes/'.$noEmail->id.'/contrasena', ['contrasena' => 'nueva2026', 'nota' => 'Llamada del cliente'], $this->headers())->assertUnprocessable()->assertJsonPath('code', 'EMAIL_REQUIRED');
+
+        $operator = $this->user('empresa_operador', 'demo-operator');
+        $operatorToken = $this->token($operator);
+        $this->postJson('/api/v1/usuarios/'.$operator->id.'/contrasena', ['contrasena' => 'corta'], $this->headers())->assertUnprocessable()->assertJsonPath('errors.contrasena.0', 'Usa al menos 12 caracteres.');
+        $this->postJson('/api/v1/usuarios/'.$operator->id.'/contrasena', ['contrasena' => 'OperadorNuevo2026'], $this->headers())->assertOk()->assertJsonMissingPath('data.password');
+        $this->getJson('/api/v1/auth/me', $this->headers($operatorToken))->assertUnauthorized();
+        $this->postJson('/api/v1/auth/login', ['email' => $operator->email, 'password' => 'OperadorNuevo2026'])->assertOk();
+        $this->postJson('/api/v1/usuarios/'.$this->admin->id.'/contrasena', ['contrasena' => 'AdminNuevo2026x'], $this->headers())->assertOk();
+        $this->getJson('/api/v1/auth/me', $this->headers())->assertOk();
     }
 }

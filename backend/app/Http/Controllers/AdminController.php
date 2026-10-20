@@ -29,6 +29,19 @@ class AdminController extends ApiController
         }, 201);
     }
 
+    public function resetUserPassword(OperationRequest $r, string $id)
+    {
+        return $this->mutation($r, function ($d, $a) use ($id) {
+            $u = User::findOrFail($id);
+            $u->update(['password' => Hash::make($d['contrasena']), 'failed_attempts' => 0, 'locked_until' => null]);
+            // Other sessions of that person end; an administrator changing their own password keeps working.
+            AccessToken::where('user_id', $id)->when($id === $a, fn ($q) => $q->where('token_hash', '!=', request()->attributes->get('access_token')?->token_hash))->delete();
+            app(SecurityService::class)->record('contrasena_usuario_restablecida', $a, ['user_id' => $id]);
+
+            return $u->refresh()->toArray();
+        });
+    }
+
     public function updateUser(OperationRequest $r, string $id)
     {
         return $this->mutation($r, function ($d, $a) use ($id) {

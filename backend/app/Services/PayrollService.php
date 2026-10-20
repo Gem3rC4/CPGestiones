@@ -57,7 +57,8 @@ class PayrollService
     {
         $payroll = Payroll::findOrFail($id);
         $this->authorizeCompany($payroll->empresa_id, $actor);
-        if ($payroll->creado_por === $actor) {
+        // The administrator may authorize their own payroll (demo/academic use); other roles keep four eyes.
+        if ($payroll->creado_por === $actor && User::find($actor)?->role !== 'administrador') {
             throw new BusinessException('Otra persona debe autorizar esta planilla.', 'FOUR_EYES_REQUIRED', 403);
         }
         if ($payroll->estado !== 'pendiente_autorizacion') {

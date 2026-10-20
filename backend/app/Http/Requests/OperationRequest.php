@@ -39,6 +39,9 @@ class OperationRequest extends FormRequest
             'demo.corporativo' => ['contrasena' => 'required|string|min:12|max:72|regex:/[A-Z]/|regex:/[a-z]/|regex:/[0-9]/'],
             'clientes.acceso' => ['activo' => 'required|boolean', 'nota' => 'required|string|min:5|max:500'],
             'clientes.sesiones' => [],
+            // Customer passwords follow the Banca Virtual policy; staff passwords keep the stricter one.
+            'clientes.contrasena' => ['contrasena' => BankRegistrationRequest::passwordRules(), 'nota' => 'required|string|min:5|max:500'],
+            'usuarios.contrasena' => ['contrasena' => 'required|string|min:12|max:72|regex:/[A-Z]/|regex:/[a-z]/|regex:/[0-9]/'],
             'planillas.approve' => [],
             default => [],
         };
@@ -46,6 +49,12 @@ class OperationRequest extends FormRequest
 
     public function messages(): array
     {
-        return ['required' => 'Este campo es obligatorio.', 'email' => 'Ingresa un correo válido.', 'min' => 'El valor es menor al mínimo permitido.', 'regex' => 'El formato no es válido.', 'digits' => 'El documento debe contener :digits dígitos.', 'in' => 'Selecciona una opción válida.', 'required_without' => 'Envía este campo o :values.', 'prohibits' => 'Envía solo uno de estos campos: :attribute o :other.', 'integer' => 'Este campo debe ser un número entero.', 'boolean' => 'Este campo debe ser verdadero o falso.', 'array' => 'Este campo debe ser una lista.', 'ip' => 'Ingresa una dirección IP válida.', 'string' => 'Este campo debe ser texto.', 'max' => 'El valor excede el máximo permitido (:max).', 'distinct' => 'Hay valores repetidos.', 'required_unless' => 'Este campo es obligatorio.'];
+        $passwords = match ($this->route()?->getName()) {
+            'clientes.contrasena' => BankRegistrationRequest::passwordMessages('contrasena'),
+            'usuarios.contrasena', 'demo.corporativo' => ['contrasena.min' => 'Usa al menos 12 caracteres.', 'contrasena.regex' => 'Incluye al menos una mayúscula, una minúscula y un número.'],
+            default => [],
+        };
+
+        return $passwords + ['required' => 'Este campo es obligatorio.', 'email' => 'Ingresa un correo válido.', 'min' => 'El valor es menor al mínimo permitido.', 'regex' => 'El formato no es válido.', 'digits' => 'El documento debe contener :digits dígitos.', 'in' => 'Selecciona una opción válida.', 'required_without' => 'Envía este campo o :values.', 'prohibits' => 'Envía solo uno de estos campos: :attribute o :other.', 'integer' => 'Este campo debe ser un número entero.', 'boolean' => 'Este campo debe ser verdadero o falso.', 'array' => 'Este campo debe ser una lista.', 'ip' => 'Ingresa una dirección IP válida.', 'string' => 'Este campo debe ser texto.', 'max' => 'El valor excede el máximo permitido (:max).', 'distinct' => 'Hay valores repetidos.', 'required_unless' => 'Este campo es obligatorio.'];
     }
 }

@@ -1,0 +1,47 @@
+<?php
+
+namespace App\Http\Requests;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class OperationRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    public function rules(): array
+    {
+        $id = 'required|string|regex:/^[a-f0-9]{24}$/D';
+        $money = ['required', 'string', 'regex:/^(0|[1-9][0-9]{0,9})(\.[0-9]{1,2})?$/D'];
+        $scope = ['cliente_ref' => 'sometimes|string|max:100'];
+
+        return match ($this->route()->getName()) {
+            'auth.login' => ['email' => 'required|email|max:180', 'password' => 'required|string|max:200'],
+            'usuarios.store' => ['name' => 'required|string|max:150', 'email' => 'required|email|max:180', 'password' => 'required|string|min:12|max:72|regex:/[A-Z]/|regex:/[a-z]/|regex:/[0-9]/', 'role' => 'required|in:administrador,gerente,cajero,analista,auditor,empresa_operador,empresa_aprobador'],
+            'usuarios.update' => ['role' => 'required|in:administrador,gerente,cajero,analista,auditor,empresa_operador,empresa_aprobador', 'active' => 'required|boolean'],
+            'clientes.store' => ['nombre' => 'required|string|max:150', 'email' => 'required|email|max:180', 'dpi' => 'required|digits:13', 'nit' => 'required|string|max:20', 'telefono' => 'required|string|max:20', 'external_ref' => 'required|string|max:100', 'ingreso_mensual' => $money, 'deuda_mensual' => $money],
+            'productos.update' => ['name' => 'required|string|max:120', 'active' => 'required|boolean', 'annual_bps' => 'required|integer|min:0|max:6000', 'minimum_bps' => 'required|integer|min:0|max:10000', 'minimum_floor_cents' => 'required|integer|min:0|max:1000000', 'cutoff_day' => 'required|integer|min:1|max:31', 'payment_days' => 'required|integer|min:1|max:30'],
+            'cuentas.store' => ['cliente_id' => $id, 'producto' => 'required|string|max:60', 'nombre' => 'sometimes|string|max:100'] + $scope,
+            'cuentas.state' => ['estado' => 'required|in:activa,bloqueada', 'nota' => 'required|string|min:5|max:500'],
+            'transferencias.store' => ['origen_id' => $id, 'destino_id' => 'required_without:destino_numero|prohibits:destino_numero|string|regex:/^[a-f0-9]{24}$/D', 'destino_numero' => 'required_without:destino_id|string|regex:/^[0-9]{10}$/D', 'monto' => $money, 'concepto' => 'required|string|min:3|max:160'] + $scope,
+            'caja.store' => ['cuenta_id' => $id, 'monto' => $money, 'tipo' => 'required|in:deposito,retiro', 'concepto' => 'required|string|min:3|max:160'],
+            'solicitudes.store' => ['cliente_id' => $id, 'producto' => 'required|string|max:60', 'limite_solicitado' => ['sometimes', 'string', 'regex:/^(0|[1-9][0-9]{0,9})(\.[0-9]{1,2})?$/D'], 'cuenta_id' => 'sometimes|nullable|string|regex:/^[a-f0-9]{24}$/D'] + $scope,
+            'solicitudes.risk' => ['version' => 'required|integer|min:1', 'resultado' => 'required|in:aprobada,rechazada,revision_manual', 'limite_aprobado' => $money, 'referencia' => 'required|string|max:100', 'motivo' => 'required|string|min:5|max:1000'],
+            'solicitudes.transition' => ['limite_asignado' => ['sometimes', 'string', 'regex:/^(0|[1-9][0-9]{0,9})(\.[0-9]{1,2})?$/D'], 'version' => 'required|integer|min:1', 'estado' => 'required|in:aprobada,rechazada,aceptada,cancelada,en_tramite,emitida', 'nota' => 'required|string|min:5|max:500', 'referencia_aceptacion' => 'sometimes|string|min:3|max:150'] + $scope,
+            'tarjetas.charge' => ['monto' => $money, 'concepto' => 'required|string|min:3|max:160'] + $scope,
+            'tarjetas.pay' => ['monto' => $money, 'origen_id' => $id] + $scope,
+            'tarjetas.state' => ['estado' => 'required|in:activa,bloqueada', 'nota' => 'required|string|min:5|max:500'] + $scope,
+            'empresas.store' => ['nombre' => 'required|string|max:150', 'nit' => 'required|string|max:20', 'cuenta_id' => $id, 'miembros' => 'required|array|min:2|max:20', 'miembros.*' => $id],
+            'planillas.store' => ['empresa_id' => $id, 'nombre' => 'required|string|max:120', 'pagos' => 'required|array|min:1|max:500', 'pagos.*.cuenta_id' => 'sometimes|string|regex:/^[a-f0-9]{24}$/D', 'pagos.*.cuenta_numero' => 'required_without:pagos.*.cuenta_id|string|max:30', 'pagos.*.nombre' => 'required|string|max:150', 'pagos.*.monto' => $money],
+            'planillas.approve' => [],
+            default => [],
+        };
+    }
+
+    public function messages(): array
+    {
+        return ['required' => 'Este campo es obligatorio.', 'email' => 'Ingresa un correo válido.', 'min' => 'El valor es menor al mínimo permitido.', 'regex' => 'El formato no es válido.', 'digits' => 'El documento debe contener :digits dígitos.', 'in' => 'Selecciona una opción válida.'];
+    }
+}

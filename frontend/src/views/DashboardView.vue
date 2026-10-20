@@ -1,0 +1,24 @@
+<script setup>
+import { computed } from 'vue'
+import { ArrowUpRight, FileCheck2, Clock3, Wallet, Building2, ArrowRight, Plus, ShieldCheck } from 'lucide-vue-next'
+import { money, label, date } from '../services/api'
+import StatusBadge from '../components/StatusBadge.vue'
+const props = defineProps({ data: Object, clients: Array, can: Function })
+defineEmits(['navigate', 'action', 'open'])
+const maximum = computed(() => Math.max(1, ...(props.data?.por_estado || []).map(x => x.cantidad)))
+const customer = id => props.clients.find(x => (x.id || x._id) === id)?.nombre || 'Cliente registrado'
+</script>
+<template>
+  <div v-if="data" class="dashboard">
+    <section class="overview-intro"><div><p class="eyebrow">UNA VISTA DE TODA LA OPERACIÓN</p><h2>Todo listo para seguir avanzando.</h2><p>Consulta las solicitudes y atiende las gestiones que necesitan tu atención.</p></div><button v-if="can('solicitudes.write')" class="primary" @click="$emit('action', 'solicitudes')"><Plus :size="17"/> Nueva solicitud</button></section>
+    <section class="metrics">
+      <article class="metric"><div class="metric-top"><span>Solicitudes registradas</span><span class="metric-icon blue"><FileCheck2 :size="20"/></span></div><strong>{{ data.solicitudes }}</strong><small>Total de gestiones de tarjetas <ArrowUpRight :size="14"/></small></article>
+      <article class="metric"><div class="metric-top"><span>En seguimiento</span><span class="metric-icon amber"><Clock3 :size="20"/></span></div><strong>{{ data.pendientes }}<span class="metric-suffix">gestiones</span></strong><small>Evaluación, revisión y emisión</small></article>
+      <article class="metric"><div class="metric-top"><span>Saldo en cuentas</span><span class="metric-icon teal"><Wallet :size="20"/></span></div><strong class="amount">{{ money(data.saldo_centavos) }}</strong><small>{{ data.cuentas }} cuentas de clientes</small></article>
+      <article class="metric"><div class="metric-top"><span>Planillas por autorizar</span><span class="metric-icon violet"><Building2 :size="20"/></span></div><strong>{{ data.planillas_pendientes }}</strong><small>Requieren una segunda aprobación</small></article>
+    </section>
+    <div class="dashboard-grid"><section class="panel recent-panel"><div class="panel-heading"><div><h3>Solicitudes recientes</h3><p>Últimos movimientos del flujo de tarjetas</p></div><button class="text-button" @click="$emit('navigate', 'solicitudes')">Ver todas <ArrowRight :size="16"/></button></div><div class="table-wrap"><table><thead><tr><th>CLIENTE / GESTIÓN</th><th>PRODUCTO</th><th>ESTADO</th><th></th></tr></thead><tbody><tr v-for="item in data.recientes" :key="item.id" @click="$emit('open', item)"><td><div class="person-cell"><span class="avatar">{{ customer(item.cliente_id).slice(0, 2).toUpperCase() }}</span><span><b>{{ customer(item.cliente_id) }}</b><small>{{ item.folio }}</small></span></div></td><td>{{ label(item.producto) }}</td><td><StatusBadge :value="item.estado"/></td><td><button class="icon-button" aria-label="Ver solicitud" @click.stop="$emit('open', item)"><ArrowUpRight :size="18"/></button></td></tr><tr v-if="!data.recientes.length"><td colspan="4" class="empty-inline">Aún no hay solicitudes. Crea la primera para comenzar.</td></tr></tbody></table></div></section>
+    <section class="panel distribution"><div class="panel-heading"><div><h3>Flujo de solicitudes</h3><p>Distribución por etapa</p></div><span class="small-tag">RESUMEN</span></div><div class="bars"><div v-for="item in data.por_estado" :key="item.estado"><div class="bar-label"><span>{{ label(item.estado) }}</span><b>{{ item.cantidad }}</b></div><div class="bar-track"><span :class="item.estado" :style="{width: `${item.cantidad / maximum * 100}%`}"></span></div></div></div><div class="distribution-footer"><ShieldCheck :size="18"/><span><b>{{ data.emitidas }} tarjetas emitidas</b><small>Con historial completo de aprobación</small></span></div></section></div>
+    <section class="quick-section"><div><h3>Operaciones frecuentes</h3><p>Continúa con una gestión del día a día.</p></div><div class="quick-actions"><button v-if="can('cuentas.write')" @click="$emit('action', 'cuentas')"><span class="metric-icon blue"><Wallet :size="20"/></span><span><b>Abrir una cuenta</b><small>Ahorro o monetaria</small></span><ArrowUpRight :size="19"/></button><button v-if="can('dinero.write')" @click="$emit('action', 'transferencia')"><span class="metric-icon teal"><ArrowRight :size="20"/></span><span><b>Transferir fondos</b><small>Entre cuentas del banco</small></span><ArrowUpRight :size="19"/></button><button v-if="can('planillas.write')" @click="$emit('action', 'planillas')"><span class="metric-icon violet"><Building2 :size="20"/></span><span><b>Cargar una planilla</b><small>Pagos con doble autorización</small></span><ArrowUpRight :size="19"/></button></div></section>
+  </div>
+</template>

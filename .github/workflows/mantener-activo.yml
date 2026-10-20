@@ -1,0 +1,21 @@
+# Render (plan gratuito) suspende el servicio tras 15 minutos sin tráfico, lo que detendría
+# planillas, eventos y el cierre diario. Este flujo consulta la API cada 10 minutos.
+# Configura la variable del repositorio BACKEND_URL (Settings > Secrets and variables > Actions > Variables),
+# por ejemplo https://cp-gestiones-api.onrender.com
+name: Mantener API activa
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    if: ${{ vars.BACKEND_URL != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Consultar /api/v1/health
+        run: curl -fsS --max-time 120 --retry 3 --retry-delay 20 "${{ vars.BACKEND_URL }}/api/v1/health"

@@ -1,0 +1,1515 @@
+{
+  "info": {
+    "name": "CP Gestiones — API v1",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Usa una base ficticia. Credenciales vacías: configura tus valores localmente. Revisa INTEGRACION.md."
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8001/api/v1"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "riskToken",
+      "value": ""
+    },
+    {
+      "key": "email",
+      "value": ""
+    },
+    {
+      "key": "password",
+      "value": ""
+    },
+    {
+      "key": "cliente_id",
+      "value": ""
+    },
+    {
+      "key": "cuenta_id",
+      "value": ""
+    },
+    {
+      "key": "origen_id",
+      "value": ""
+    },
+    {
+      "key": "destino_id",
+      "value": ""
+    },
+    {
+      "key": "solicitud_id",
+      "value": ""
+    },
+    {
+      "key": "tarjeta_id",
+      "value": ""
+    },
+    {
+      "key": "empresa_id",
+      "value": ""
+    },
+    {
+      "key": "planilla_id",
+      "value": ""
+    },
+    {
+      "key": "producto_id",
+      "value": ""
+    },
+    {
+      "key": "usuario_id",
+      "value": ""
+    },
+    {
+      "key": "operador_id",
+      "value": ""
+    },
+    {
+      "key": "aprobador_id",
+      "value": ""
+    },
+    {
+      "key": "cuenta_numero",
+      "value": ""
+    },
+    {
+      "key": "cliente_ref",
+      "value": ""
+    },
+    {
+      "key": "idempotencyKey",
+      "value": "reemplazar-por-una-clave-unica"
+    },
+    {
+      "key": "bankToken",
+      "value": ""
+    },
+    {
+      "key": "customerToken",
+      "value": ""
+    },
+    {
+      "key": "customerPassword",
+      "value": ""
+    },
+    {
+      "key": "alerta_id",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "alertas",
+      "item": [
+        {
+          "name": "GET /alertas",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/alertas",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Solo empleados con permiso de clientes, cuentas o gestiones; filtro por permiso. Paginación de 25. Cada alerta incluye id, titulo, mensaje, recurso, recurso_id, created_at y leida para el empleado. Polling del panel cada 5 segundos."
+          }
+        },
+        {
+          "name": "POST /alertas/leidas",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/alertas/leidas",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Marca solo los IDs visibles indicados y autorizados. Lectura individual por empleado; repetir es seguro. No marca alertas recibidas posteriormente.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ids\": [\n    \"{{alerta_id}}\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "auth",
+      "item": [
+        {
+          "name": "POST /auth/login",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/login",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "Consulta o gestión de auth",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) { pm.collectionVariables.set(\"token\", pm.response.json().data.token); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /auth/logout",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/logout",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "description": "Consulta o gestión de auth"
+          }
+        },
+        {
+          "name": "GET /auth/me",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/auth/me",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "description": "Consulta o gestión de auth"
+          }
+        }
+      ]
+    },
+    {
+      "name": "banca",
+      "item": [
+        {
+          "name": "POST /banca/registro",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/banca/registro",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{bankToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Registrar cliente y abrir ahorro; exclusivo del token banca, requiere clientes.write y cuentas.write. Ver REGISTRO-BANCA.md. Límite compartido de 180 peticiones/minuto por integración.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cliente_ref\": \"{{cliente_ref}}\",\n  \"nombre\": \"Juan\",\n  \"apellido\": \"Pérez\",\n  \"correo_electronico\": \"juan.perez@ejemplo.com\",\n  \"dpi\": \"1234567890123\",\n  \"nit\": \"1234567-8\",\n  \"fecha_nacimiento\": \"25/10/1990\",\n  \"tipo_empleo\": \"Asalariado\",\n  \"ingresos_mensuales_q\": 5000.0,\n  \"antiguedad_laboral_meses\": 24,\n  \"contrasena\": \"{{customerPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "GET /banca/perfil",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/banca/perfil?cliente_ref={{cliente_ref}}",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{bankToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Consultar perfil por cliente_ref; exclusivo del token banca, requiere clientes.read. Ver REGISTRO-BANCA.md. Límite compartido de 180 peticiones/minuto por integración."
+          }
+        },
+        {
+          "name": "GET /banca/resumen",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/banca/resumen?cliente_ref={{cliente_ref}}",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{bankToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Consultar cuentas y saldos por cliente_ref; exclusivo del token banca, requiere clientes.read y cuentas.read. Ver REGISTRO-BANCA.md. Límite compartido de 180 peticiones/minuto por integración."
+          }
+        },
+        {
+          "name": "PATCH /banca/perfil/finanzas",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/banca/perfil/finanzas",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{bankToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Actualizar únicamente datos financieros, exige perfil_version vigente; exclusivo del token banca, requiere clientes.write. Ver REGISTRO-BANCA.md. Límite compartido de 180 peticiones/minuto por integración.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cliente_ref\": \"{{cliente_ref}}\",\n  \"tipo_empleo\": \"Independiente\",\n  \"ingresos_mensuales_q\": 6500.25,\n  \"antiguedad_laboral_meses\": 36,\n  \"perfil_version\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST /banca/auth/login",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/banca/auth/login",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{bankToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Valida contraseña en Gestiones; 5 fallos bloquean 15 minutos. Sesión de cliente por 60 minutos, separada del acceso administrativo. Límite: 10 intentos/minuto por correo, además del límite general.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"correo_electronico\": \"juan.perez@ejemplo.com\",\n  \"contrasena\": \"{{customerPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) pm.collectionVariables.set(\"customerToken\", pm.response.json().data.token_cliente);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /banca/auth/sesion",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/banca/auth/sesion",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Cliente-Token",
+                "value": "{{customerToken}}"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{bankToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Verifica sesión, vencimiento y acceso del cliente. Devuelve su identidad para la sesión de Banca Virtual."
+          }
+        },
+        {
+          "name": "POST /banca/auth/logout",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/banca/auth/logout",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Cliente-Token",
+                "value": "{{customerToken}}"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{bankToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Revoca la sesión indicada por X-Cliente-Token."
+          }
+        },
+        {
+          "name": "POST /banca/gestiones",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/banca/gestiones",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{bankToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Recibe la oferta aceptada y abre en_tramite con alerta. Exige evaluación aprobada del mismo cliente, registrada directamente por Analítica. No acepta un máximo enviado por Banca. Solo un trámite por evaluación y uno activo por cliente/producto.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cliente_ref\": \"{{cliente_ref}}\",\n  \"gestion_ref\": \"10030\",\n  \"evaluacion_ref\": \"eval-10030\",\n  \"referencia_aceptacion\": \"consent-10030\",\n  \"aceptada_en\": \"2026-10-07T11:30:00-06:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST /banca/eventos",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/banca/eventos",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{bankToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Alertas informativas autenticadas y deduplicadas. cliente_ref obligatorio salvo registro.iniciado. referencia: ID local del cliente/cuenta/gestión existente, o referencia del registro pendiente. No cambia saldos, identidad ni estados.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"evento_id\": \"evento-registro-001\",\n  \"tipo\": \"registro.iniciado\",\n  \"referencia\": \"registro-001\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "bitacora",
+      "item": [
+        {
+          "name": "GET /bitacora",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/bitacora",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "description": "Consulta o gestión de bitacora Permiso requerido: bitacora.read."
+          }
+        }
+      ]
+    },
+    {
+      "name": "caja",
+      "item": [
+        {
+          "name": "POST /caja",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/caja",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "description": "Consulta o gestión de caja Permiso requerido: caja.write.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cuenta_id\": \"{{cuenta_id}}\",\n  \"monto\": \"100.00\",\n  \"tipo\": \"deposito\",\n  \"concepto\": \"Depósito ficticio\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "clientes",
+      "item": [
+        {
+          "name": "GET /clientes",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/clientes",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "description": "Consulta o gestión de clientes Permiso requerido: clientes.read."
+          }
+        },
+        {
+          "name": "POST /clientes",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/clientes",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "description": "Consulta o gestión de clientes Permiso requerido: clientes.write.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Cliente ficticio\",\n  \"email\": \"cliente@example.test\",\n  \"dpi\": \"9999999999999\",\n  \"nit\": \"DEMO-001\",\n  \"telefono\": \"55550000\",\n  \"external_ref\": \"cliente-ficticio-001\",\n  \"ingreso_mensual\": \"8500.00\",\n  \"deuda_mensual\": \"500.00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "creditos",
+      "item": [
+        {
+          "name": "GET /creditos",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/creditos",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "description": "Consulta o gestión de creditos Permiso requerido: solicitudes.read."
+          }
+        }
+      ]
+    },
+    {
+      "name": "cuentas",
+      "item": [
+        {
+          "name": "GET /cuentas",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/cuentas",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "description": "Consulta o gestión de cuentas Permiso requerido: cuentas.read."
+          }
+        },
+        {
+          "name": "POST /cuentas",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/cuentas",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "description": "Consulta o gestión de cuentas Permiso requerido: cuentas.write.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cliente_id\": \"{{cliente_id}}\",\n  \"producto\": \"ahorro\",\n  \"nombre\": \"Ahorro\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "PATCH /cuentas/{id}/estado",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/cuentas/{{cuenta_id}}/estado",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "description": "Consulta o gestión de cuentas Permiso requerido: cuentas.manage.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"estado\": \"bloqueada\",\n  \"nota\": \"Bloqueo operativo documentado\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "GET /cuentas/{id}/movimientos",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/cuentas/{{cuenta_id}}/movimientos",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "description": "Consulta o gestión de cuentas Permiso requerido: cuentas.read."
+          }
+        }
+      ]
+    },
+    {
+      "name": "dashboard",
+      "item": [
+        {
+          "name": "GET /dashboard",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/dashboard",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "description": "Consulta o gestión de dashboard Permiso requerido: dashboard.read."
+          }
+        }
+      ]
+    },
+    {
+      "name": "empresas",
+      "item": [
+        {
+          "name": "GET /empresas",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/empresas",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "description": "Consulta o gestión de empresas Permiso requerido: empresas.read."
+          }
+        },
+        {
+          "name": "POST /empresas",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/empresas",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "description": "Consulta o gestión de empresas Permiso requerido: empresas.write.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Empresa ficticia\",\n  \"nit\": \"DEMO-EMPRESA\",\n  \"cuenta_id\": \"{{cuenta_id}}\",\n  \"miembros\": [\n    \"{{operador_id}}\",\n    \"{{aprobador_id}}\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "health",
+      "item": [
+        {
+          "name": "GET /health",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/health",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "description": "Consulta o gestión de health",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "integraciones",
+      "item": [
+        {
+          "name": "GET /integraciones",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/integraciones",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "description": "Consulta o gestión de integraciones Permiso requerido: integraciones.read."
+          }
+        }
+      ]
+    },
+    {
+      "name": "planillas",
+      "item": [
+        {
+          "name": "GET /planillas",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/planillas",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "description": "Consulta o gestión de planillas Permiso requerido: planillas.read."
+          }
+        },
+        {
+          "name": "POST /planillas",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/planillas",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "description": "Cuenta de cargo tomada de la empresa. No repitas beneficiarios. Usuarios corporativos deben ser miembros. Se acepta número de cuenta o identificador interno. Permiso requerido: planillas.write.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"empresa_id\": \"{{empresa_id}}\",\n  \"nombre\": \"Planilla ficticia\",\n  \"pagos\": [\n    {\n      \"nombre\": \"Beneficiario ficticio\",\n      \"cuenta_numero\": \"{{cuenta_numero}}\",\n      \"monto\": \"1000.00\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST /planillas/{id}/autorizar",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/planillas/{{planilla_id}}/autorizar",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "description": "El creador no puede autorizar. La autorización deja el lote en_cola. El proceso cp:payrolls hace la dispersión completa en segundo plano. Permiso requerido: planillas.approve.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "productos",
+      "item": [
+        {
+          "name": "GET /productos",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/productos",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "description": "Consulta o gestión de productos Permiso requerido: productos.read."
+          }
+        },
+        {
+          "name": "PATCH /productos/{id}",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/productos/{{producto_id}}",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "description": "Consulta o gestión de productos Permiso requerido: productos.write.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Tarjeta de crédito Clásica\",\n  \"active\": true,\n  \"annual_bps\": 3600,\n  \"minimum_bps\": 500,\n  \"minimum_floor_cents\": 10000,\n  \"cutoff_day\": 20,\n  \"payment_days\": 20\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "riesgos",
+      "item": [
+        {
+          "name": "GET /riesgos/pendientes",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/riesgos/pendientes",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "description": "Consulta o gestión de riesgos Permiso requerido: riesgos.read."
+          }
+        },
+        {
+          "name": "POST /riesgos/evaluaciones",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/riesgos/evaluaciones",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{riskToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Solo service:riesgos. Registra una evaluación inmutable previa al consentimiento. Máximo positivo y no mayor a lo solicitado; rechazo requiere cero. Repetición por evaluacion_ref con otros datos devuelve 409.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cliente_ref\": \"{{cliente_ref}}\",\n  \"evaluacion_ref\": \"eval-10030\",\n  \"producto\": \"credito-personal\",\n  \"resultado\": \"aprobada\",\n  \"monto_solicitado\": \"10000.00\",\n  \"limite_aprobado\": \"8500.00\",\n  \"motivo\": \"Evaluación sintética aprobada\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "seguridad",
+      "item": [
+        {
+          "name": "GET /seguridad",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/seguridad",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "description": "Consulta o gestión de seguridad Permiso requerido: seguridad.read."
+          }
+        }
+      ]
+    },
+    {
+      "name": "solicitudes",
+      "item": [
+        {
+          "name": "GET /solicitudes",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/solicitudes",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "description": "Consulta o gestión de solicitudes Permiso requerido: solicitudes.read."
+          }
+        },
+        {
+          "name": "POST /solicitudes",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/solicitudes",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "description": "Crédito requiere limite_solicitado positivo; débito requiere cuenta_id activa del titular. Solo puede existir una solicitud activa por cliente y producto. Permiso requerido: solicitudes.write.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cliente_id\": \"{{cliente_id}}\",\n  \"producto\": \"credito-clasica\",\n  \"limite_solicitado\": \"10000.00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "GET /solicitudes/{id}",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/solicitudes/{{solicitud_id}}",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "description": "Consulta o gestión de solicitudes Permiso requerido: solicitudes.read."
+          }
+        },
+        {
+          "name": "POST /solicitudes/{id}/decision-riesgo",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/solicitudes/{{solicitud_id}}/decision-riesgo",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "description": "Exclusivo del token de servicio riesgos, incluso frente a administradores. limite_aprobado positivo para aprobada/revision_manual y no mayor al solicitado. Rechazo admite 0.00. version debe coincidir con la solicitud. Permiso requerido: riesgos.decide.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": 1,\n  \"resultado\": \"aprobada\",\n  \"limite_aprobado\": \"8000.00\",\n  \"referencia\": \"EVAL-DEMO-001\",\n  \"motivo\": \"Respuesta sintética para probar el contrato\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{riskToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /solicitudes/{id}/transiciones",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/solicitudes/{{solicitud_id}}/transiciones",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "description": "Secuencia: revisión manual → aprobada/rechazada; aprobada → aceptada/cancelada; aceptada → en_tramite; en_tramite → emitida. La aceptación exige referencia_aceptacion. Banca solo puede aceptar o cancelar para su cliente. Permiso requerido: solicitudes.read. En trámite permite emitir o rechazar. Para emitir crédito/préstamo el operador ingresa limite_asignado. El máximo de Analítica permanece intacto; límite asignado, responsable y nota quedan registrados. Prestamo crea crédito autorizado sin desembolso; credito/debito crean tarjeta. Banca no puede emitir ni rechazar.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": 2,\n  \"estado\": \"aceptada\",\n  \"nota\": \"Aceptación registrada\",\n  \"referencia_aceptacion\": \"CONSENTIMIENTO-DEMO-001\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "tarjetas",
+      "item": [
+        {
+          "name": "GET /tarjetas",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/tarjetas",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "description": "Consulta o gestión de tarjetas Permiso requerido: tarjetas.read."
+          }
+        },
+        {
+          "name": "POST /tarjetas/{id}/consumos",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/tarjetas/{{tarjeta_id}}/consumos",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "description": "Consulta o gestión de tarjetas Permiso requerido: tarjetas.write.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"monto\": \"50.00\",\n  \"concepto\": \"Consumo ficticio\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "PATCH /tarjetas/{id}/estado",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/tarjetas/{{tarjeta_id}}/estado",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "description": "Consulta o gestión de tarjetas Permiso requerido: tarjetas.write.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"estado\": \"bloqueada\",\n  \"nota\": \"Bloqueo solicitado\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "GET /tarjetas/{id}/estados-cuenta",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/tarjetas/{{tarjeta_id}}/estados-cuenta",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "description": "Consulta o gestión de tarjetas Permiso requerido: tarjetas.read."
+          }
+        },
+        {
+          "name": "POST /tarjetas/{id}/pagos",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/tarjetas/{{tarjeta_id}}/pagos",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "description": "Cuenta de cargo del titular. No admite pago superior a la deuda. Cubre intereses y luego capital; aplica a mínimos pendientes por antigüedad. Permiso requerido: tarjetas.write.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"monto\": \"20.00\",\n  \"origen_id\": \"{{origen_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "transferencias",
+      "item": [
+        {
+          "name": "POST /transferencias",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/transferencias",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "description": "Solo cuentas internas de clientes del banco, activas y misma moneda. Transacción atómica y dos asientos. Un conflicto de concurrencia se reintenta con la misma Idempotency-Key. Permiso requerido: dinero.write.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origen_id\": \"{{origen_id}}\",\n  \"destino_id\": \"{{destino_id}}\",\n  \"monto\": \"100.25\",\n  \"concepto\": \"Prueba entre cuentas ficticias\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "usuarios",
+      "item": [
+        {
+          "name": "GET /usuarios",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/usuarios",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "description": "Consulta o gestión de usuarios Permiso requerido: usuarios.read."
+          }
+        },
+        {
+          "name": "POST /usuarios",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/usuarios",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "description": "Consulta o gestión de usuarios Permiso requerido: usuarios.write.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Nombre de ejemplo\",\n  \"email\": \"usuario@example.test\",\n  \"password\": \"{{password}}\",\n  \"role\": \"cajero\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "PATCH /usuarios/{id}",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/usuarios/{{usuario_id}}",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "description": "No permite modificar el propio acceso. Revoca todas las sesiones del usuario actualizado. Permiso requerido: usuarios.write.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"cajero\",\n  \"active\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "usuarios-corporativos",
+      "item": [
+        {
+          "name": "GET /usuarios-corporativos",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/usuarios-corporativos",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "description": "Consulta o gestión de usuarios-corporativos Permiso requerido: empresas.write."
+          }
+        }
+      ]
+    }
+  ]
+}

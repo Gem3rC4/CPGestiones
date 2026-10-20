@@ -1,0 +1,21 @@
+# Replica set de un nodo para desarrollo local; no exponer a Internet.
+services:
+  mongodb:
+    image: mongo:8.2
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    ports: ["127.0.0.1:27017:27017"]
+    volumes: ["cp_mongodb:/data/db"]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  mongo-init:
+    image: mongo:8.2
+    depends_on:
+      mongodb: {condition: service_healthy}
+    entrypoint: ["mongosh", "--host", "mongodb:27017", "--quiet", "--eval"]
+    command: ["try { rs.status(); } catch (e) { rs.initiate({_id:'rs0',members:[{_id:0,host:'localhost:27017'}]}); }"]
+    restart: "no"
+volumes:
+  cp_mongodb:

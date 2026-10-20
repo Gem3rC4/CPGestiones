@@ -1,0 +1,15 @@
+backend/.env
+backend/vendor/
+backend/storage/logs/*
+backend/storage/framework/cache/data/*
+backend/bootstrap/cache/*.php
+backend/.phpunit.cache/
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+ACCESO-LOCAL.txt
+.local/
+*.log
+backend/.phpunit.result.cache
+*.enc
+.vercel/

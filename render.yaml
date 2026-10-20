@@ -1,0 +1,35 @@
+# Blueprint de Render: API de CP Gestiones (Laravel + MongoDB Atlas) en el plan gratuito.
+services:
+  - type: web
+    name: cp-gestiones-api
+    runtime: docker
+    plan: free
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/v1/health
+    autoDeploy: true
+    envVars:
+      - key: APP_NAME
+        value: CP Gestiones
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: "false"
+      - key: APP_LOCALE
+        value: es
+      # Cifra los DPI y firma la bitácora: no la cambies después del primer despliegue.
+      - key: APP_KEY
+        generateValue: true
+      - key: LOG_LEVEL
+        value: warning
+      - key: DB_DATABASE
+        value: cp_gestiones
+      # Se piden al crear el servicio (no quedan en el repositorio).
+      - key: DB_URI
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: INITIAL_ADMIN_EMAIL
+        sync: false
+      - key: INITIAL_ADMIN_PASSWORD
+        sync: false

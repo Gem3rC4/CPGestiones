@@ -4,6 +4,8 @@ services:
     name: cp-gestiones-api
     runtime: docker
     plan: free
+    # Misma zona que el clúster de Atlas (AWS us-east-1, N. Virginia).
+    region: virginia
     rootDir: backend
     dockerfilePath: ./Dockerfile
     healthCheckPath: /api/v1/health

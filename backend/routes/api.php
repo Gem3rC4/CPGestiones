@@ -9,6 +9,7 @@ use App\Http\Controllers\BankManagementController;
 use App\Http\Controllers\BankRegistrationController;
 use App\Http\Controllers\CardController;
 use App\Http\Controllers\CustomerAuthController;
+use App\Http\Controllers\IntegrationTokenController;
 use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\QueryController;
 use App\Http\Middleware\BankIntegration;
@@ -65,5 +66,8 @@ Route::prefix('v1')->group(function () {
         $post('/planillas/{id}/autorizar', PayrollController::class, 'approve', 'planillas.approve', 'planillas.approve');
         Route::get('/riesgos/pendientes', [QueryController::class, 'riskPending'])->middleware('permit:riesgos.read');
         Route::get('/integraciones', [QueryController::class, 'integrations'])->middleware('permit:integraciones.read');
+        Route::get('/integraciones/tokens', [IntegrationTokenController::class, 'index'])->middleware('permit:integraciones.write');
+        Route::post('/integraciones/tokens', [IntegrationTokenController::class, 'store'])->middleware(['permit:integraciones.write', 'throttle:10,1']);
+        Route::post('/integraciones/tokens/{id}/revocar', [IntegrationTokenController::class, 'revoke'])->middleware('permit:integraciones.write')->where('id', '[a-f0-9]{24}');
     });
 });

@@ -15,6 +15,7 @@ use App\Models\IdempotencyRecord;
 use App\Models\Movement;
 use App\Models\OutboxEvent;
 use App\Models\Payroll;
+use App\Models\SecurityEvent;
 use App\Models\Statement;
 use App\Models\User;
 use App\Services\ApplicationService;
@@ -121,6 +122,25 @@ final class OperationsTest extends TestCase
         $token = $login->json('data.token');
         $this->postJson('/api/v1/auth/logout', [], $this->headers($token))->assertOk();
         $this->getJson('/api/v1/auth/me', $this->headers($token))->assertUnauthorized();
+    }
+
+    public function test_admin_issues_lists_and_revokes_integration_tokens_without_storing_them(): void
+    {
+        $cashier = $this->user('cajero', 'cashier');
+        $this->postJson('/api/v1/integraciones/tokens', ['cliente' => 'banca', 'dias' => 90], $this->headers($this->token($cashier)))->assertForbidden();
+        $this->postJson('/api/v1/integraciones/tokens', ['cliente' => 'otro', 'dias' => 7], $this->headers())->assertUnprocessable();
+        $issued = $this->postJson('/api/v1/integraciones/tokens', ['cliente' => 'banca', 'dias' => 90], $this->headers())->assertCreated()->json('data');
+        self::assertMatchesRegularExpression('/^[a-f0-9]{64}$/', $issued['token']);
+        self::assertSame(0, IdempotencyRecord::count());
+        self::assertNull(AccessToken::where('token_hash', $issued['token'])->first());
+        $this->getJson('/api/v1/productos', $this->headers($issued['token']))->assertOk();
+        $this->getJson('/api/v1/usuarios', $this->headers($issued['token']))->assertForbidden();
+        $list = $this->getJson('/api/v1/integraciones/tokens', $this->headers())->assertOk()->json('data');
+        self::assertSame([['id' => $issued['id'], 'client' => 'banca', 'hint' => substr($issued['token'], -4)]], array_map(fn ($t) => array_intersect_key($t, array_flip(['id', 'client', 'hint'])), $list));
+        self::assertStringNotContainsString($issued['token'], json_encode($list));
+        $this->postJson('/api/v1/integraciones/tokens/'.$issued['id'].'/revocar', [], $this->headers())->assertOk();
+        $this->getJson('/api/v1/productos', $this->headers($issued['token']))->assertUnauthorized();
+        self::assertSame(['token_integracion_emitido', 'token_integracion_revocado'], SecurityEvent::whereIn('action', ['token_integracion_emitido', 'token_integracion_revocado'])->orderBy('created_at')->pluck('action')->all());
     }
 
     public function test_transfer_is_balanced_idempotent_and_rejects_reused_key(): void

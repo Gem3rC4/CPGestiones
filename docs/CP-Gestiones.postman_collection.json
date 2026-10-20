@@ -17,7 +17,7 @@
   "variable": [
     {
       "key": "baseUrl",
-      "value": "http://127.0.0.1:8001/api/v1"
+      "value": "https://cp-gestiones-api.onrender.com/api/v1"
     },
     {
       "key": "token",

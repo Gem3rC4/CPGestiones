@@ -14,20 +14,20 @@ Cada sistema debe consumir HTTP. No se comparte acceso directo a MongoDB ni se c
 
 Importa `openapi.json` en un visor OpenAPI 3.1. En Postman importa `CP-Gestiones.postman_collection.json`; contiene las 51 rutas de esta versión. El grupo `banca` utiliza la variable privada `bankToken`. Configura las variables localmente. No exportes contraseñas ni tokens en una colección compartida.
 
-URL local: `http://127.0.0.1:8001/api/v1`. En línea se debe usar HTTPS. La sesión del panel usa un token opaco revocable, no JWT; esto permite invalidarlo inmediatamente al cambiar permisos o cerrar sesión.
+URL en línea: `https://cp-gestiones-api.onrender.com/api/v1` (local: `http://127.0.0.1:8001/api/v1`). Guía resumida para Banca: [GUIA-BANCA-VIRTUAL.md](GUIA-BANCA-VIRTUAL.md). La sesión del panel usa un token opaco revocable, no JWT; esto permite invalidarlo inmediatamente al cambiar permisos o cerrar sesión.
 
 ## Autenticación
 
 `POST /auth/login` recibe `email` y `password`. La respuesta incluye `data.token`, `data.user` y `data.permissions`. Envía `Authorization: Bearer <token>` y `Accept: application/json` en las siguientes peticiones. La sesión de un empleado vence a los 60 minutos. Cinco contraseñas incorrectas bloquean el acceso durante 15 minutos. `POST /auth/logout` revoca la sesión actual.
 
-Desde la terminal del backend, un operador autorizado genera credenciales de integración:
+Un administrador genera las credenciales de integración en el panel → **Integraciones** → *Tokens de integración*: elige el sistema (Banca Virtual o Analítica) y la vigencia (30, 90, 180 o 365 días). El token se muestra una sola vez y la tabla permite revocarlo. En una instalación local también existen los comandos:
 
 ```text
 php artisan cp:token banca
 php artisan cp:token riesgos
 ```
 
-El comando muestra el secreto una sola vez; MongoDB conserva su hash. Estos tokens duran 30 días. Para revocar todos los tokens de una integración: `php artisan cp:revoke banca` o `php artisan cp:revoke riesgos`. La emisión del reemplazo no revoca automáticamente el anterior. No se incluyeron credenciales de integración en la entrega.
+El comando muestra el secreto una sola vez; MongoDB conserva su hash. Por consola duran 30 días. Para revocar todos los tokens de una integración: `php artisan cp:revoke banca` o `php artisan cp:revoke riesgos`. La emisión del reemplazo no revoca automáticamente el anterior. No se incluyeron credenciales de integración en la entrega.
 
 El token de riesgos tiene acceso a pendientes y decisiones. El token de banca tiene permisos limitados para clientes, productos, cuentas, transferencias, solicitudes y tarjetas. Ninguno concede administración de usuarios ni acceso general a la bitácora. La decisión de riesgo exige específicamente la identidad `service:riesgos`, incluso cuando quien llama tiene rol administrador.
 

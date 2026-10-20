@@ -51,7 +51,17 @@ class AuthService
         return config('operations.roles.'.$user->role, []);
     }
 
-    public function issueService(string $client): string
+    public function issueService(string $client, int $days = 30, string $actor = 'console'): string
+    {
+        return $this->createServiceToken($client, $days, $actor)['token'];
+    }
+
+    /**
+     * The plain token is returned once and never stored; only its hash and last four characters are kept.
+     *
+     * @return array{id: string, token: string, client: string, hint: string, expires_at: string}
+     */
+    public function createServiceToken(string $client, int $days, string $actor): array
     {
         $permissions = match ($client) {
             'banca' => ['clientes.read', 'clientes.write', 'productos.read', 'cuentas.read', 'cuentas.write', 'dinero.write', 'solicitudes.read', 'solicitudes.write', 'solicitudes.accept', 'tarjetas.read', 'tarjetas.write'],
@@ -59,8 +69,8 @@ class AuthService
             default => throw new BusinessException('Cliente de integración desconocido.', 'INVALID_CLIENT', 422),
         };
         $plain = bin2hex(random_bytes(32));
-        AccessToken::create(['token_hash' => hash('sha256', $plain), 'client' => $client, 'permissions' => $permissions, 'kind' => 'service', 'expires_at' => now()->addDays(30)]);
+        $token = AccessToken::create(['token_hash' => hash('sha256', $plain), 'client' => $client, 'permissions' => $permissions, 'kind' => 'service', 'hint' => substr($plain, -4), 'created_by' => $actor, 'expires_at' => now()->addDays($days)]);
 
-        return $plain;
+        return ['id' => (string) $token->id, 'token' => $plain, 'client' => $client, 'hint' => $token->hint, 'expires_at' => $token->expires_at->toIso8601String()];
     }
 }

@@ -18,7 +18,7 @@ El navegador envía a **su propio servidor de Banca Virtual** el formulario actu
 | `PATCH /banca/perfil/finanzas` | Guardar ingresos, tipo de empleo y antigüedad. |
 | `GET /banca/resumen?cliente_ref=...` | Mostrar cuentas, saldos y cantidad de cuentas en Inicio. |
 
-Base local: `http://127.0.0.1:8001/api/v1`. Esta dirección solo sirve en la computadora que ejecuta Gestiones. La URL HTTPS pública se definirá al desplegar. No se han incluido tokens reales en el código ni en Postman.
+URL en línea: `https://cp-gestiones-api.onrender.com/api/v1` (local: `http://127.0.0.1:8001/api/v1`). La guía resumida para el equipo de Banca está en [GUIA-BANCA-VIRTUAL.md](GUIA-BANCA-VIRTUAL.md). No se han incluido tokens reales en el código ni en Postman.
 
 ## Petición de registro
 
@@ -184,7 +184,7 @@ La respuesta de un reintento de registro es la fotografía original de apertura.
 
 ## Credencial, ejemplo y Postman
 
-En Gestiones, el responsable autorizado ejecuta `php artisan cp:token banca`. Caduca a los 30 días. Guárdala en una variable privada del **backend** de banca, nunca en variables `VITE_`, `NEXT_PUBLIC_`, bundles del navegador ni repositorios.
+Un administrador de Gestiones lo genera en el panel → **Integraciones** → *Tokens de integración* (vigencia de 30 días a 1 año; se muestra una sola vez y se puede revocar ahí mismo). También existe `php artisan cp:token banca` en una instalación local. Guárdala en una variable privada del **backend** de banca, nunca en variables `VITE_`, `NEXT_PUBLIC_`, bundles del navegador ni repositorios.
 
 El archivo [registro-cliente.servidor.mjs](ejemplos/registro-cliente.servidor.mjs) contiene un adaptador de ejemplo para Node con `fetch`. Muestra la selección explícita de campos, timeout y tratamiento de respuestas. No implementa la interfaz ni las cookies de sesión de tu compañero; debe llamarse con una referencia y clave persistentes, manteniendo la contraseña solo en memoria durante la petición. El mismo contrato se puede consumir desde PHP, C# u otro backend.
 

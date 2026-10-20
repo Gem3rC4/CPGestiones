@@ -26,6 +26,16 @@
         "summary": "Solo empleados con permiso de clientes, cuentas o gestiones; filtro por permiso",
         "description": "Solo empleados con permiso de clientes, cuentas o gestiones; filtro por permiso. Paginación de 25. Cada alerta incluye id, titulo, mensaje, recurso, recurso_id, created_at y leida para el empleado. Polling del panel cada 5 segundos. Ver INTEGRACION.md.",
         "responses": {
+          "200": {
+            "description": "Operación completada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertsResponse"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Token ausente, caducado o acceso bloqueado",
             "content": {
@@ -92,16 +102,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "Operación completada",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AlertsResponse"
                 }
               }
             }
@@ -129,6 +129,16 @@
         "summary": "Marca solo los IDs visibles indicados y autorizados",
         "description": "Marca solo los IDs visibles indicados y autorizados. Lectura individual por empleado; repetir es seguro. No marca alertas recibidas posteriormente. Ver INTEGRACION.md.",
         "responses": {
+          "200": {
+            "description": "Operación completada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Success"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Token ausente, caducado o acceso bloqueado",
             "content": {
@@ -195,16 +205,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "Operación completada",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Success"
                 }
               }
             }
@@ -528,6 +528,16 @@
         "summary": "Valida contraseña en Gestiones; 5 fallos bloquean 15 minutos",
         "description": "Valida contraseña en Gestiones; 5 fallos bloquean 15 minutos. Sesión de cliente por 60 minutos, separada del acceso administrativo. Límite: 10 intentos/minuto por correo, además del límite general. Ver INTEGRACION.md.",
         "responses": {
+          "200": {
+            "description": "Operación completada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerLoginResponse"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Token ausente, caducado o acceso bloqueado",
             "content": {
@@ -594,16 +604,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "Operación completada",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CustomerLoginResponse"
                 }
               }
             }
@@ -635,6 +635,16 @@
         "summary": "Revoca la sesión indicada por X-Cliente-Token",
         "description": "Revoca la sesión indicada por X-Cliente-Token. Ver INTEGRACION.md.",
         "responses": {
+          "200": {
+            "description": "Operación completada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Success"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Token ausente, caducado o acceso bloqueado",
             "content": {
@@ -701,16 +711,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "Operación completada",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Success"
                 }
               }
             }
@@ -738,6 +738,16 @@
         "summary": "Verifica sesión, vencimiento y acceso del cliente",
         "description": "Verifica sesión, vencimiento y acceso del cliente. Devuelve su identidad para la sesión de Banca Virtual. Ver INTEGRACION.md.",
         "responses": {
+          "200": {
+            "description": "Operación completada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerSessionResponse"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Token ausente, caducado o acceso bloqueado",
             "content": {
@@ -804,16 +814,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "Operación completada",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CustomerSessionResponse"
                 }
               }
             }
@@ -841,6 +841,16 @@
         "summary": "Alertas informativas autenticadas y deduplicadas",
         "description": "Alertas informativas autenticadas y deduplicadas. cliente_ref obligatorio salvo registro.iniciado. referencia: ID local del cliente/cuenta/gestión existente, o referencia del registro pendiente. No cambia saldos, identidad ni estados. Ver INTEGRACION.md.",
         "responses": {
+          "201": {
+            "description": "Operación completada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Success"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Token ausente, caducado o acceso bloqueado",
             "content": {
@@ -907,16 +917,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "201": {
-            "description": "Operación completada",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Success"
                 }
               }
             }
@@ -953,6 +953,16 @@
         "summary": "Recibe la oferta aceptada y abre en_tramite con alerta",
         "description": "Recibe la oferta aceptada y abre en_tramite con alerta. Exige evaluación aprobada del mismo cliente, registrada directamente por Analítica. No acepta un máximo enviado por Banca. Solo un trámite por evaluación y uno activo por cliente/producto. Ver INTEGRACION.md.",
         "responses": {
+          "201": {
+            "description": "Operación completada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Success"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Token ausente, caducado o acceso bloqueado",
             "content": {
@@ -1019,16 +1029,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "201": {
-            "description": "Operación completada",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Success"
                 }
               }
             }
@@ -1388,7 +1388,7 @@
                 "nit": "1234567-8",
                 "fecha_nacimiento": "25/10/1990",
                 "tipo_empleo": "Asalariado",
-                "ingresos_mensuales_q": 5000.0,
+                "ingresos_mensuales_q": 5000,
                 "antiguedad_laboral_meses": 24,
                 "contrasena": "EjemploSeguro123!"
               }
@@ -3799,6 +3799,16 @@
         "summary": "Solo service:riesgos",
         "description": "Solo service:riesgos. Registra una evaluación inmutable previa al consentimiento. Máximo positivo y no mayor a lo solicitado; rechazo requiere cero. Repetición por evaluacion_ref con otros datos devuelve 409. Ver INTEGRACION.md.",
         "responses": {
+          "201": {
+            "description": "Operación completada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Success"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Token ausente, caducado o acceso bloqueado",
             "content": {
@@ -3865,16 +3875,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "201": {
-            "description": "Operación completada",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Success"
                 }
               }
             }
@@ -5947,6 +5947,193 @@
               "example": {
                 "role": "cajero",
                 "active": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/integraciones/tokens": {
+      "get": {
+        "operationId": "get_integraciones_tokens",
+        "tags": [
+          "integraciones"
+        ],
+        "summary": "Listar tokens de integración activos",
+        "description": "Devuelve sistema (client), últimos cuatro caracteres (hint), creador, creación y vencimiento. Nunca devuelve el token. Permiso requerido: integraciones.write (administrador).",
+        "responses": {
+          "200": {
+            "description": "Operación completada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Success"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token ausente, caducado o acceso bloqueado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Solo administradores",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_integraciones_tokens",
+        "tags": [
+          "integraciones"
+        ],
+        "summary": "Generar token de integración",
+        "description": "Devuelve el token en claro una sola vez (data.token); solo se guarda su hash. Sin Idempotency-Key para no persistir el secreto. Permiso requerido: integraciones.write (administrador). Límite: 10 por minuto.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "cliente",
+                  "dias"
+                ],
+                "properties": {
+                  "cliente": {
+                    "type": "string",
+                    "enum": [
+                      "banca",
+                      "riesgos"
+                    ]
+                  },
+                  "dias": {
+                    "type": "integer",
+                    "enum": [
+                      30,
+                      90,
+                      180,
+                      365
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Token generado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Success"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token ausente, caducado o acceso bloqueado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Solo administradores",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Datos inválidos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/integraciones/tokens/{id}/revocar": {
+      "post": {
+        "operationId": "post_integraciones_tokens_revocar",
+        "tags": [
+          "integraciones"
+        ],
+        "summary": "Revocar token de integración",
+        "description": "El sistema que lo use deja de conectarse de inmediato. Permiso requerido: integraciones.write (administrador).",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ObjectId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Token revocado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Success"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token ausente, caducado o acceso bloqueado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Solo administradores",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Token no encontrado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
               }
             }
           }

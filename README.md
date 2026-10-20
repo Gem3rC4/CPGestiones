@@ -97,7 +97,7 @@ La base de esta computadora usa el puerto **27028** para mantenerla separada de 
 4. Vuelve a Render y pon `FRONTEND_URL=https://<tu-panel>.vercel.app` (varias separadas por coma).
 5. En GitHub, *Settings > Secrets and variables > Actions > Variables*, crea `BACKEND_URL=https://<tu-api>.onrender.com`. Render gratis se suspende tras 15 minutos sin tráfico y eso detendría planillas y cierres.
 
-Los datos demo (`cp:demo`) solo funcionan en local; en línea la base empieza vacía, con el catálogo y el administrador. Los tokens para Banca y Analítica se generan con `php artisan cp:token banca` apuntando `DB_URI` a Atlas desde una computadora con PHP y la extensión MongoDB.
+Los datos demo (`cp:demo`) solo funcionan en local; en línea la base empieza vacía, con el catálogo y el administrador. Los tokens para Banca y Analítica los genera el administrador en el panel → **Integraciones** → *Tokens de integración*. La guía para el equipo de Banca es [docs/GUIA-BANCA-VIRTUAL.md](docs/GUIA-BANCA-VIRTUAL.md).
 
 ## Recorrido de demostración
 

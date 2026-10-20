@@ -13,6 +13,13 @@ use Illuminate\Support\Str;
 
 class AccountService
 {
+    /**
+     * Internal accounts that stand for money entering the ledger from outside: cash received at the
+     * counter and the bank's own interest expense. Their negative balance is that inflow, so the sum of
+     * every balance stays zero. Customer and settlement accounts can never be overdrawn.
+     */
+    public const COUNTERPARTY_ACCOUNTS = ['caja', 'intereses'];
+
     public function __construct(private AccountRepository $repository) {}
 
     public function open(array $d, string $actor): array
@@ -65,7 +72,7 @@ class AccountService
         if ($cents < 1 || $cents > Money::MAX) {
             throw new BusinessException('Importe inválido.', 'INVALID_AMOUNT', 422);
         }
-        if (! $this->repository->debit($sourceId, $cents)) {
+        if (! $this->repository->debit($sourceId, $cents, in_array($source->system_key, self::COUNTERPARTY_ACCOUNTS, true))) {
             throw new BusinessException('La cuenta de origen no tiene fondos suficientes.', 'INSUFFICIENT_FUNDS');
         }
         if (! $this->repository->credit($targetId, $cents)) {

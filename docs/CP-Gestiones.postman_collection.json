@@ -110,6 +110,14 @@
     {
       "key": "alerta_id",
       "value": ""
+    },
+    {
+      "key": "customerNewPassword",
+      "value": ""
+    },
+    {
+      "key": "sesion_id",
+      "value": ""
     }
   ],
   "item": [
@@ -570,6 +578,219 @@
                 }
               }
             }
+          }
+        },
+        {
+          "name": "GET /banca/servicios",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{bankToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/banca/servicios"
+          }
+        },
+        {
+          "name": "POST /banca/pagos-servicios",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{bankToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/banca/pagos-servicios",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cliente_ref\": \"{{cliente_ref}}\",\n  \"origen_id\": \"{{origen_id}}\",\n  \"servicio\": \"eegsa\",\n  \"referencia_servicio\": \"NIS-1234\",\n  \"monto\": \"125.50\"\n}"
+            }
+          }
+        },
+        {
+          "name": "GET /banca/pagos-servicios",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{bankToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/banca/pagos-servicios?cliente_ref={{cliente_ref}}"
+          }
+        },
+        {
+          "name": "GET /banca/cuentas/destino",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{bankToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/banca/cuentas/destino?cliente_ref={{cliente_ref}}&numero={{cuenta_numero}}"
+          }
+        },
+        {
+          "name": "POST /banca/auth/contrasena",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{bankToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Cliente-Token",
+                "value": "{{customerToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/banca/auth/contrasena",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"contrasena_actual\": \"{{customerPassword}}\",\n  \"contrasena_nueva\": \"{{customerNewPassword}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "GET /banca/auth/sesiones",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{bankToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Cliente-Token",
+                "value": "{{customerToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/banca/auth/sesiones"
+          }
+        },
+        {
+          "name": "POST /banca/auth/sesiones/{id}/revocar",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{bankToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Cliente-Token",
+                "value": "{{customerToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/banca/auth/sesiones/{{sesion_id}}/revocar"
           }
         }
       ]

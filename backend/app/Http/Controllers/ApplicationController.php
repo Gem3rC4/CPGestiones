@@ -44,6 +44,6 @@ class ApplicationController extends ApiController
         $a = CardApplication::findOrFail($id);
         $scope->check($a->cliente_id);
 
-        return $this->ok(['solicitud' => $a, 'historial' => AuditEvent::where('solicitud_id',$id)->orderBy('sequence')->get(), 'integridad_verificada' => $audit->verify($a)]);
+        return $this->ok(['solicitud' => $a, 'historial' => AuditEvent::where('solicitud_id', $id)->orderBy('sequence')->get(), 'integridad_verificada' => $audit->verify($a)]);
     }
 }

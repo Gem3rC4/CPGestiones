@@ -7,6 +7,7 @@ use App\Models\Customer;
 use App\Models\CustomerSession;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\ValidationException;
 
 class CustomerAuthService
 {
@@ -32,7 +33,7 @@ class CustomerAuthService
             }
             $customer->update($changes);
             $plain = bin2hex(random_bytes(32));
-            CustomerSession::create(['token_hash' => hash('sha256', $plain), 'cliente_id' => (string) $customer->id, 'expires_at' => now()->addMinutes(config('operations.token_minutes'))]);
+            CustomerSession::create(['token_hash' => hash('sha256', $plain), 'cliente_id' => (string) $customer->id, 'expires_at' => now()->addMinutes(config('operations.token_minutes')), 'dispositivo' => $data['dispositivo'] ?? null, 'ip' => $data['ip'] ?? null, 'ultima_actividad' => now()]);
             app(SecurityService::class)->record('login_cliente', 'cliente:'.$customer->id);
 
             return ['token_cliente' => $plain, 'expires_in' => config('operations.token_minutes') * 60, 'cliente' => app(BankRegistrationService::class)->findProfile($customer->external_ref)];
@@ -51,7 +52,63 @@ class CustomerAuthService
         if (! $session || ! $session->expires_at || $session->expires_at->isPast() || ! $customer || ! $customer->active || $customer->locked_until?->isFuture()) {
             throw new BusinessException('La sesión del cliente venció. Inicia sesión de nuevo.', 'CUSTOMER_SESSION_EXPIRED', 401);
         }
+        // Throttled write: enough for "actividad hace X min" without one update per request.
+        if (! $session->ultima_actividad || $session->ultima_actividad->lt(now()->subMinute())) {
+            CustomerSession::where('_id', $session->id)->update(['ultima_actividad' => now()]);
+            $session->ultima_actividad = now();
+        }
 
         return $session;
+    }
+
+    public function changePassword(CustomerSession $session, string $current, string $new): array
+    {
+        if (hash_equals($current, $new)) {
+            throw ValidationException::withMessages(['contrasena_nueva' => 'La contraseña nueva debe ser diferente de la actual.']);
+        }
+        $result = DB::connection('mongodb')->transaction(function () use ($session, $current, $new): ?array {
+            $customer = Customer::findOrFail($session->cliente_id);
+            if (! Hash::check($current, $customer->password)) {
+                // Same lockout as login, so a stolen session cannot be used to guess the password.
+                $failures = (int) $customer->failed_attempts + 1;
+                $customer->update(['failed_attempts' => $failures, 'locked_until' => $failures >= config('operations.max_failures') ? now()->addMinutes(config('operations.lock_minutes')) : null]);
+                app(SecurityService::class)->record('cambio_contrasena_fallido', 'cliente:'.$customer->id);
+
+                return null;
+            }
+            $customer->update(['password' => Hash::make($new), 'failed_attempts' => 0, 'locked_until' => null]);
+            $closed = CustomerSession::where('cliente_id', (string) $customer->id)->where('_id', '!=', $session->id)->delete();
+            app(SecurityService::class)->record('contrasena_cliente_actualizada', 'cliente:'.$customer->id, ['sesiones_cerradas' => $closed]);
+
+            return ['contrasena_actualizada' => true, 'sesiones_cerradas' => $closed];
+        }, attempts: 5);
+        if ($result === null) {
+            throw ValidationException::withMessages(['contrasena_actual' => 'La contraseña actual no es correcta.']);
+        }
+
+        return $result;
+    }
+
+    public function sessions(CustomerSession $current): array
+    {
+        return CustomerSession::where('cliente_id', $current->cliente_id)->where('expires_at', '>', now())->orderBy('created_at', 'desc')->get()
+            ->map(fn (CustomerSession $session): array => [
+                'id' => (string) $session->id, 'actual' => (string) $session->id === (string) $current->id,
+                'dispositivo' => $session->dispositivo, 'ip' => $session->ip,
+                'inicio' => $session->created_at?->toIso8601String(), 'ultima_actividad' => $session->ultima_actividad?->toIso8601String(),
+                'vence' => $session->expires_at?->toIso8601String(),
+            ])->values()->all();
+    }
+
+    public function revokeSession(CustomerSession $current, string $id): array
+    {
+        $session = CustomerSession::where('_id', $id)->where('cliente_id', $current->cliente_id)->first();
+        if (! $session) {
+            throw new BusinessException('No se encontró esa sesión del cliente.', 'NOT_FOUND', 404);
+        }
+        $session->delete();
+        app(SecurityService::class)->record('sesion_cliente_revocada', 'cliente:'.$current->cliente_id, ['sesion_id' => $id]);
+
+        return ['revocada' => true, 'era_actual' => (string) $session->id === (string) $current->id];
     }
 }

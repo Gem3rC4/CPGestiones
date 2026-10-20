@@ -27,6 +27,7 @@ El ZIP de código excluye contraseñas, `.env`, bases de datos, herramientas por
 | Empresas y planillas | Membresía, operador y aprobador distintos, hasta 500 beneficiarios, dispersión programada, transacción completa y reintento sin duplicar pagos. |
 | Bitácora | Gestiones de productos y aprobaciones: secuencia, actor, estado, motivo y cadena HMAC verificable. Sin rutas para editar o eliminar. |
 | Seguridad | Registro separado de accesos, cambios de permisos y operaciones. |
+| Banca Virtual | Registro, login, cambio de contraseña y sesiones activas del cliente; pago de servicios con historial; confirmación de cuenta destino y transferencias por número. Guía en `docs/GUIA-BANCA-VIRTUAL.md`. |
 | Integración | API v1, tokens separados de banca y riesgos, cola persistente de eventos, reintentos y webhooks firmados. |
 
 ## Integración real pendiente

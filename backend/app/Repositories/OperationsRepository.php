@@ -30,6 +30,6 @@ class OperationsRepository
             }
         }
 
-        return $query->orderBy('created_at', 'desc')->paginate(min(max($size, 1), 100), ['*'], 'page', max(1,$page));
+        return $query->orderBy('created_at', 'desc')->paginate(min(max($size, 1), 100), ['*'], 'page', max(1, $page));
     }
 }

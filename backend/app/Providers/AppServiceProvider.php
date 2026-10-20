@@ -15,6 +15,7 @@ class AppServiceProvider extends ServiceProvider
     {
         RateLimiter::for('login', fn (Request $r) => [Limit::perMinute(10)->by('login:'.$r->ip()), Limit::perMinute(5)->by('email:'.hash('sha256', strtolower((string) $r->input('email'))))]);
         RateLimiter::for('cliente-login', fn (Request $r) => Limit::perMinute(10)->by('cliente-login:'.hash('sha256', mb_strtolower(trim((string) $r->input('correo_electronico'))))));
+        RateLimiter::for('cliente-contrasena', fn (Request $r) => Limit::perMinute(5)->by('cliente-contrasena:'.hash('sha256', (string) $r->header('X-Cliente-Token', ''))));
         RateLimiter::for('api', function (Request $r) {
             $actor = (string) $r->attributes->get('actor', $r->ip());
             if (! str_starts_with($actor, 'service:')) {

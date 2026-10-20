@@ -8,5 +8,5 @@ class CustomerSession extends Document
 
     protected $hidden = ['token_hash'];
 
-    protected $casts = ['expires_at' => 'datetime'];
+    protected $casts = ['expires_at' => 'datetime', 'ultima_actividad' => 'datetime'];
 }

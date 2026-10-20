@@ -23,7 +23,7 @@ return Application::configure(basePath: dirname(__DIR__))
         if ($proxies = env('TRUSTED_PROXIES')) {
             $middleware->trustProxies(at: $proxies === '*' ? '*' : explode(',', $proxies));
         }
-        $middleware->trimStrings(except: ['contrasena']);
+        $middleware->trimStrings(except: ['contrasena', 'contrasena_actual', 'contrasena_nueva']);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->report(function (Exception $e) {

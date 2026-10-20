@@ -20,7 +20,7 @@ Se requiere replica set o clúster compatible con transacciones. No hay fallback
 
 Las claves de repetición se conservan sin caducidad. Reusar una clave con otro cuerpo devuelve 409. Un conflicto concurrente puede responder 409: repite la misma petición con la misma clave. Después de una respuesta incierta nunca generes otra clave para el mismo movimiento.
 
-Caja y liquidaciones son cuentas internas. El catálogo inicia estas cuentas en cero; `cp:demo` fondea la caja con dinero ficticio. Las cuentas internas no se exponen como destinos de transferencias normales. La apertura `apertura_demo` no constituye un libro mayor contable completo de un banco.
+Caja, intereses y liquidaciones (comercios, pagos de tarjeta y servicios) son cuentas internas que inician en cero. **Caja** e **intereses** son contrapartidas de dinero que entra desde fuera del libro (efectivo recibido en ventanilla y gasto de intereses del banco), por lo que pueden quedar en negativo hasta el límite del dominio: así un depósito funciona desde una instalación nueva y la suma de todos los saldos sigue siendo cero. Las cuentas de clientes y de liquidación nunca se sobregiran. `cp:demo` sigue cargando dinero ficticio a la caja para la demostración local. Las cuentas internas no se exponen como destinos de transferencias normales. La apertura `apertura_demo` no constituye un libro mayor contable completo de un banco.
 
 ## Intereses y mínimos
 
@@ -32,7 +32,7 @@ El corte inicial es el día 20, con vencimiento 20 días después. Si el día co
 
 Los saltos de fecha de crédito se detectan: no se calculan días históricos con el saldo actual. Un cierre omitido necesita conciliación y una política de reconstrucción histórica. No se implementan mora, seguros, comisiones, períodos de gracia, refinanciamientos ni saldo promedio diario.
 
-Ahorro: devengo y abono diario con tasa anual / 365, desde la cuenta interna `intereses`, que debe tener fondos. La instalación original tiene un fondo ficticio para probarlo. La falta de fondos revierte el abono y deja el día pendiente. Las cuentas mantienen su tasa inicial; las nuevas usan la tasa vigente del catálogo. Las tarjetas conservan una copia de la política de la solicitud. Cambiar el catálogo no altera obligaciones anteriores.
+Ahorro: devengo y abono diario con tasa anual / 365, desde la cuenta interna `intereses` (contrapartida que refleja el gasto acumulado del banco). Si un abono falla (por ejemplo, la cuenta superaría el límite de saldo), se revierte completo y ese día queda en `pendientes` sin afectar a las demás cuentas. Las cuentas mantienen su tasa inicial; las nuevas usan la tasa vigente del catálogo. Las tarjetas conservan una copia de la política de la solicitud. Cambiar el catálogo no altera obligaciones anteriores.
 
 ## Planillas
 

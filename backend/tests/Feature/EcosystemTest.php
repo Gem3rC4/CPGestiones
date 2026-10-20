@@ -10,6 +10,7 @@ use App\Models\CardApplication;
 use App\Models\Credit;
 use App\Models\Customer;
 use App\Models\CustomerSession;
+use App\Models\Movement;
 use App\Models\OperationAlert;
 use App\Models\OutboxEvent;
 use App\Models\RiskAssessment;
@@ -266,5 +267,85 @@ final class EcosystemTest extends TestCase
         self::assertSame(1, OperationAlert::count());
         self::assertSame(1, BankEvent::count());
         self::assertSame('en_tramite', CardApplication::first()->estado);
+    }
+
+    private function account(Customer $customer, int $cents, string $number): Account
+    {
+        return Account::create(['cliente_id' => (string) $customer->id, 'numero' => $number, 'tipo' => 'ahorro', 'estado' => 'activa', 'moneda' => 'GTQ', 'saldo_centavos' => $cents, 'nombre' => 'Ahorro']);
+    }
+
+    public function test_service_payment_debits_the_owner_account_once_and_appears_in_history(): void
+    {
+        $own = $this->account($this->customer, 50000, '2738729879');
+        $other = Customer::create(['nombre' => 'Otra Persona', 'email' => 'otra@example.test', 'dpi' => '2222222222222', 'external_ref' => 'banca-2', 'active' => true]);
+        $foreign = $this->account($other, 50000, '2000000001');
+        $catalog = $this->getJson('/api/v1/banca/servicios', $this->headers())->assertOk()->json('data');
+        self::assertSame(['empagua', 'eegsa', 'energuate', 'impuestos-municipales', 'internet-cable', 'claro', 'tigo'], array_column($catalog, 'codigo'));
+        $body = ['cliente_ref' => 'banca-1', 'origen_id' => (string) $own->id, 'servicio' => 'eegsa', 'referencia_servicio' => 'nis-1234', 'monto' => '125.50'];
+        $headers = $this->headers(key: 'service-payment-01');
+        $paid = $this->postJson('/api/v1/banca/pagos-servicios', $body, $headers)->assertCreated()->json('data');
+        $replay = $this->postJson('/api/v1/banca/pagos-servicios', $body, $headers)->assertCreated()->json('data');
+        self::assertEquals($paid, $replay);
+        self::assertSame(['Energía eléctrica (EEGSA)', 'NIS-1234', '125.50', '374.50'], [$paid['servicio_nombre'], $paid['referencia_servicio'], $paid['monto'], $paid['saldo_disponible']]);
+        self::assertSame(37450, $own->refresh()->saldo_centavos);
+        self::assertSame(12550, Account::where('system_key', 'servicios')->first()->saldo_centavos);
+        $this->postJson('/api/v1/banca/pagos-servicios', ['origen_id' => (string) $foreign->id] + $body, $this->headers())->assertForbidden();
+        $this->postJson('/api/v1/banca/pagos-servicios', ['monto' => '9999.00'] + $body, $this->headers())->assertConflict()->assertJsonPath('code', 'INSUFFICIENT_FUNDS');
+        $this->postJson('/api/v1/banca/pagos-servicios', ['referencia_servicio' => 'ab'] + $body, $this->headers())->assertUnprocessable()->assertJsonValidationErrors('referencia_servicio');
+        $this->postJson('/api/v1/banca/pagos-servicios', ['servicio' => 'gas'] + $body, $this->headers())->assertUnprocessable()->assertJsonValidationErrors('servicio');
+        $this->postJson('/api/v1/banca/pagos-servicios', ['saldo' => '1'] + $body, $this->headers())->assertUnprocessable();
+        $this->postJson('/api/v1/banca/pagos-servicios', $body, $this->headers($this->manager))->assertForbidden();
+        $history = $this->getJson('/api/v1/banca/pagos-servicios?cliente_ref=banca-1', $this->headers())->assertOk()->json('data');
+        self::assertSame(1, $history['total']);
+        self::assertSame($paid['comprobante'], $history['data'][0]['comprobante']);
+        $this->getJson('/api/v1/banca/pagos-servicios?cliente_ref=banca-2', $this->headers())->assertOk()->assertJsonPath('data.total', 0);
+        self::assertSame(-12550, (int) Movement::where('cuenta_id', (string) $own->id)->sum('importe_centavos'));
+    }
+
+    public function test_bank_can_confirm_a_destination_account_without_exposing_balances(): void
+    {
+        $own = $this->account($this->customer, 1000, '2738729879');
+        $other = Customer::create(['nombres' => 'María Fernanda', 'apellidos' => 'López Ruiz', 'nombre' => 'María Fernanda López Ruiz', 'email' => 'maria@example.test', 'dpi' => '3333333333333', 'external_ref' => 'banca-3', 'active' => true]);
+        $this->account($other, 99999, '2000000002');
+        $found = $this->getJson('/api/v1/banca/cuentas/destino?cliente_ref=banca-1&numero=2000000002', $this->headers())->assertOk()->json('data');
+        self::assertSame(['numero' => '2000000002', 'numero_formateado' => '2-000-000002', 'tipo' => 'ahorro', 'moneda' => 'GTQ', 'titular' => 'María L.', 'propia' => false], $found);
+        $this->getJson('/api/v1/banca/cuentas/destino?cliente_ref=banca-1&numero='.$own->numero, $this->headers())->assertOk()->assertJsonPath('data.propia', true);
+        $this->getJson('/api/v1/banca/cuentas/destino?cliente_ref=banca-1&numero=1111111111', $this->headers())->assertNotFound()->assertJsonPath('code', 'ACCOUNT_NOT_FOUND');
+        $this->getJson('/api/v1/banca/cuentas/destino?cliente_ref=banca-1&numero=2-000-000002', $this->headers())->assertUnprocessable();
+    }
+
+    public function test_customer_changes_password_and_manages_active_sessions(): void
+    {
+        $login = fn (string $password, array $extra = []) => $this->postJson('/api/v1/banca/auth/login', ['correo_electronico' => 'cliente@example.test', 'contrasena' => $password] + $extra, $this->headers());
+        $current = $login('PasswordSeguro123', ['dispositivo' => 'Chrome en Windows', 'ip' => '203.0.113.7'])->assertOk()->json('data.token_cliente');
+        $phone = $login('PasswordSeguro123', ['dispositivo' => 'Safari en iPhone'])->assertOk()->json('data.token_cliente');
+        $login('PasswordSeguro123', ['ip' => 'no-es-ip'])->assertUnprocessable()->assertJsonValidationErrors('ip');
+        $session = $this->headers() + ['X-Cliente-Token' => $current];
+        $sessions = $this->getJson('/api/v1/banca/auth/sesiones', $session)->assertOk()->json('data');
+        self::assertCount(2, $sessions);
+        $mine = collect($sessions)->firstWhere('actual', true);
+        self::assertSame(['Chrome en Windows', '203.0.113.7'], [$mine['dispositivo'], $mine['ip']]);
+        self::assertArrayNotHasKey('token_hash', $mine);
+
+        $this->postJson('/api/v1/banca/auth/contrasena', ['contrasena_actual' => 'Incorrecta123', 'contrasena_nueva' => 'NuevaClave2026x'], $session)->assertUnprocessable()->assertJsonValidationErrors('contrasena_actual');
+        self::assertSame(1, $this->customer->refresh()->failed_attempts);
+        $this->postJson('/api/v1/banca/auth/contrasena', ['contrasena_actual' => 'PasswordSeguro123', 'contrasena_nueva' => 'corta'], $session)->assertUnprocessable()->assertJsonValidationErrors('contrasena_nueva');
+        $this->postJson('/api/v1/banca/auth/contrasena', ['contrasena_actual' => 'PasswordSeguro123', 'contrasena_nueva' => 'PasswordSeguro123'], $session)->assertUnprocessable()->assertJsonValidationErrors('contrasena_nueva');
+        $this->postJson('/api/v1/banca/auth/contrasena', ['contrasena_actual' => 'PasswordSeguro123', 'contrasena_nueva' => 'NuevaClave2026x'], $this->headers() + ['X-Cliente-Token' => str_repeat('a', 64)])->assertUnauthorized();
+        $this->postJson('/api/v1/banca/auth/contrasena', ['contrasena_actual' => 'PasswordSeguro123', 'contrasena_nueva' => 'NuevaClave2026x'], $session)
+            ->assertOk()->assertJsonPath('data.contrasena_actualizada', true)->assertJsonPath('data.sesiones_cerradas', 1);
+        $this->getJson('/api/v1/banca/auth/sesion', $this->headers() + ['X-Cliente-Token' => $phone])->assertUnauthorized();
+        $this->getJson('/api/v1/banca/auth/sesion', $session)->assertOk();
+        $login('PasswordSeguro123')->assertUnauthorized();
+        $tablet = $login('NuevaClave2026x', ['dispositivo' => 'Tablet'])->assertOk()->json('data.token_cliente');
+
+        $tabletId = collect($this->getJson('/api/v1/banca/auth/sesiones', $session)->json('data'))->firstWhere('dispositivo', 'Tablet')['id'];
+        $outsider = Customer::create(['nombre' => 'Otra', 'email' => 'otra2@example.test', 'dpi' => '4444444444444', 'external_ref' => 'banca-4', 'password' => Hash::make('OtraClave12345'), 'active' => true, 'failed_attempts' => 0]);
+        $foreign = $this->postJson('/api/v1/banca/auth/login', ['correo_electronico' => 'otra2@example.test', 'contrasena' => 'OtraClave12345'], $this->headers())->json('data.token_cliente');
+        $foreignId = (string) CustomerSession::where('cliente_id', (string) $outsider->id)->first()->id;
+        $this->postJson('/api/v1/banca/auth/sesiones/'.$foreignId.'/revocar', [], $session)->assertNotFound();
+        $this->getJson('/api/v1/banca/auth/sesion', $this->headers() + ['X-Cliente-Token' => $foreign])->assertOk();
+        $this->postJson('/api/v1/banca/auth/sesiones/'.$tabletId.'/revocar', [], $session)->assertOk()->assertJsonPath('data.era_actual', false);
+        $this->getJson('/api/v1/banca/auth/sesion', $this->headers() + ['X-Cliente-Token' => $tablet])->assertUnauthorized();
     }
 }

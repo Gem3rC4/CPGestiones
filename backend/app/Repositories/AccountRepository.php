@@ -17,9 +17,12 @@ class AccountRepository
         return Account::create($data);
     }
 
-    public function debit(string $id, int $cents): bool
+    public function debit(string $id, int $cents, bool $allowNegative = false): bool
     {
-        return Account::where('_id', $id)->where('saldo_centavos', '>=', $cents)->decrement('saldo_centavos', $cents) === 1;
+        // Counterparty accounts may go negative down to -MAX; every other account needs funds.
+        $floor = $allowNegative ? $cents - Money::MAX : $cents;
+
+        return Account::where('_id', $id)->where('saldo_centavos', '>=', $floor)->decrement('saldo_centavos', $cents) === 1;
     }
 
     public function credit(string $id, int $cents): bool

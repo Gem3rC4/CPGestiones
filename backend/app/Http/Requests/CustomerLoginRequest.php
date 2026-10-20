@@ -22,6 +22,9 @@ class CustomerLoginRequest extends BankCustomerRequest
                     $fail('Usa una contraseña de hasta 72 bytes, sin caracteres nulos.');
                 }
             }],
+            // Optional: lets Banca Virtual show "Chrome en Windows · IP ..." in the active sessions list.
+            'dispositivo' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'ip' => ['sometimes', 'nullable', 'ip'],
         ];
     }
 }

@@ -42,6 +42,6 @@ class OperationRequest extends FormRequest
 
     public function messages(): array
     {
-        return ['required' => 'Este campo es obligatorio.', 'email' => 'Ingresa un correo válido.', 'min' => 'El valor es menor al mínimo permitido.', 'regex' => 'El formato no es válido.', 'digits' => 'El documento debe contener :digits dígitos.', 'in' => 'Selecciona una opción válida.'];
+        return ['required' => 'Este campo es obligatorio.', 'email' => 'Ingresa un correo válido.', 'min' => 'El valor es menor al mínimo permitido.', 'regex' => 'El formato no es válido.', 'digits' => 'El documento debe contener :digits dígitos.', 'in' => 'Selecciona una opción válida.', 'required_without' => 'Envía este campo o :values.', 'prohibits' => 'Envía solo uno de estos campos: :attribute o :other.', 'integer' => 'Este campo debe ser un número entero.', 'boolean' => 'Este campo debe ser verdadero o falso.', 'array' => 'Este campo debe ser una lista.', 'ip' => 'Ingresa una dirección IP válida.', 'string' => 'Este campo debe ser texto.', 'max' => 'El valor excede el máximo permitido (:max).', 'distinct' => 'Hay valores repetidos.', 'required_unless' => 'Este campo es obligatorio.'];
     }
 }

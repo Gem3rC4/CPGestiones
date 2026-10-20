@@ -17,7 +17,7 @@ class InstallService
     public function indexes(): void
     {
         $db = DB::connection('mongodb')->getDatabase();
-        foreach (['usuarios', 'tokens', 'clientes', 'productos', 'cuentas', 'movimientos', 'idempotencias', 'solicitudes', 'tarjetas', 'estados_cuenta', 'empresas', 'planillas', 'devengos', 'bitacora', 'seguridad', 'eventos_salida', 'sesiones_clientes', 'alertas', 'eventos_entrada', 'evaluaciones_riesgo', 'creditos'] as $collection) {
+        foreach (['usuarios', 'tokens', 'clientes', 'productos', 'cuentas', 'movimientos', 'idempotencias', 'solicitudes', 'tarjetas', 'estados_cuenta', 'empresas', 'planillas', 'devengos', 'bitacora', 'seguridad', 'eventos_salida', 'sesiones_clientes', 'alertas', 'eventos_entrada', 'evaluaciones_riesgo', 'creditos', 'pagos_servicios'] as $collection) {
             try {
                 $db->createCollection($collection);
             } catch (CommandException $e) {
@@ -53,6 +53,8 @@ class InstallService
             ['bitacora', ['solicitud_id' => 1, 'sequence' => 1], ['unique' => true]],
             ['movimientos', ['transaccion_id' => 1, 'cuenta_id' => 1], ['unique' => true]], ['movimientos', ['cuenta_id' => 1, 'created_at' => -1], []],
             ['eventos_salida', ['event_id' => 1], ['unique' => true]], ['eventos_salida', ['status' => 1], []],
+            ['pagos_servicios', ['cliente_id' => 1, 'created_at' => -1], []], ['pagos_servicios', ['transaccion_id' => 1], ['unique' => true]],
+            ['sesiones_clientes', ['cliente_id' => 1], []],
         ];
         foreach ($indexes as [$collection,$keys,$options]) {
             $db->selectCollection($collection)->createIndex($keys, $options);
@@ -73,7 +75,7 @@ class InstallService
         foreach (['credito-personal' => 'Crédito Personal', 'credito-vehicular' => 'Crédito Vehicular', 'credito-hipotecario' => 'Préstamo Hipotecario'] as $code => $name) {
             Product::firstOrCreate(['code' => $code], ['name' => $name, 'type' => 'prestamo', 'active' => true, 'max_limit_cents' => null, 'annual_bps' => null]);
         }
-        foreach (['caja' => 'Caja de efectivo', 'comercios' => 'Liquidación de consumos', 'pagos_tarjeta' => 'Liquidación de pagos', 'intereses' => 'Gasto de intereses'] as $key => $name) {
+        foreach (['caja' => 'Caja de efectivo', 'comercios' => 'Liquidación de consumos', 'pagos_tarjeta' => 'Liquidación de pagos', 'intereses' => 'Gasto de intereses', 'servicios' => 'Liquidación de pago de servicios'] as $key => $name) {
             Account::firstOrCreate(['system_key' => $key], ['numero' => 'INTERNA-'.$key, 'nombre' => $name, 'tipo' => 'interna', 'moneda' => 'GTQ', 'saldo_centavos' => 0, 'estado' => 'activa']);
         }
     }

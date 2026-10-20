@@ -29,6 +29,6 @@ final class Money
 
     public static function ratio(int $value, int $numerator, int $denominator): int
     {
-        return intdiv($value * $numerator + intdiv($denominator,2), $denominator);
+        return intdiv($value * $numerator + intdiv($denominator, 2), $denominator);
     }
 }

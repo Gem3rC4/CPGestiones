@@ -11,6 +11,16 @@ return [
     'bank_secret' => env('BANK_WEBHOOK_SECRET'),
     // Only used by cp:bootstrap-admin on hosts without an interactive console (Render free).
     'initial_admin' => ['email' => env('INITIAL_ADMIN_EMAIL'), 'name' => env('INITIAL_ADMIN_NAME', 'Administrador'), 'password' => env('INITIAL_ADMIN_PASSWORD')],
+    // Billers shown in Banca Virtual > Pagar servicios. Payments settle into the internal 'servicios' account.
+    'services' => [
+        'empagua' => ['nombre' => 'Agua potable (EMPAGUA)', 'categoria' => 'Agua', 'campo' => 'Número de servicio'],
+        'eegsa' => ['nombre' => 'Energía eléctrica (EEGSA)', 'categoria' => 'Energía', 'campo' => 'Número de contador (NIS)'],
+        'energuate' => ['nombre' => 'Energía eléctrica (Energuate)', 'categoria' => 'Energía', 'campo' => 'Número de contador (NIS)'],
+        'impuestos-municipales' => ['nombre' => 'Impuestos municipales', 'categoria' => 'Gobierno', 'campo' => 'Número de boleta'],
+        'internet-cable' => ['nombre' => 'Internet y cable', 'categoria' => 'Internet', 'campo' => 'Número de contrato'],
+        'claro' => ['nombre' => 'Telefonía móvil (Claro)', 'categoria' => 'Telefonía', 'campo' => 'Número de teléfono'],
+        'tigo' => ['nombre' => 'Telefonía móvil (Tigo)', 'categoria' => 'Telefonía', 'campo' => 'Número de teléfono'],
+    ],
     'roles' => [
         'administrador' => ['*'],
         'gerente' => ['dashboard.read', 'clientes.read', 'clientes.write', 'cuentas.read', 'cuentas.write', 'cuentas.manage', 'dinero.write', 'caja.write', 'productos.read', 'solicitudes.read', 'solicitudes.write', 'solicitudes.manage', 'tarjetas.read', 'tarjetas.write', 'empresas.read', 'empresas.write', 'planillas.read', 'planillas.write', 'planillas.approve', 'bitacora.read', 'integraciones.read'],

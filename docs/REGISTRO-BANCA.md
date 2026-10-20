@@ -213,9 +213,10 @@ Las respuestas generales de clientes ahora omiten el DPI completo y exponen `dpi
 | Registro, Mi perfil, Inicio | Alta, ahorro inicial, perfil financiero y resumen centralizados. |
 | Abrir otra cuenta, transferir dentro del banco | Rutas existentes de cuentas y transferencias. "Otra cuenta" y beneficiarios envían `destino_numero` (10 dígitos); "Mis cuentas" puede usar `destino_id`. Ver INTEGRACION.md. |
 | Mis tarjetas, Gestiones | Recepción de ofertas aceptadas, límite manual sujeto al máximo de Analítica, tarjetas o créditos autorizados según producto. Contrato en INTEGRACION.md; conexión entre servidores pendiente. |
-| Beneficiarios, transferencias programadas, pago de servicios | No implementados por estas rutas; requieren una siguiente etapa. |
+| Pagar servicios | `GET /banca/servicios`, `POST /banca/pagos-servicios` e historial `GET /banca/pagos-servicios`. Ver GUIA-BANCA-VIRTUAL.md. |
+| Beneficiarios, transferencias programadas | Se guardan y programan en Banca; `GET /banca/cuentas/destino` confirma el número y el titular abreviado, y la ejecución usa `POST /transferencias`. |
 | Préstamos, plazo fijo, divisas, mapa de agencias | Existe autorización de créditos personales, vehiculares e hipotecarios; no hay desembolso, simulador, cuotas, plazo fijo, divisas ni mapa. |
-| Contraseña y sesiones del cliente | Hash, login, consulta y revocación centralizados en Gestiones. MFA, cambio y recuperación de contraseña pendientes. Los usuarios del panel siguen siendo usuarios internos. |
+| Contraseña y sesiones del cliente | Hash, login, cambio de contraseña (`POST /banca/auth/contrasena`), lista de sesiones activas y cierre de una sesión centralizados en Gestiones. Verificación en dos pasos y recuperación por correo pendientes. Los usuarios del panel siguen siendo usuarios internos. |
 
 La compatibilidad documentada corresponde a los datos de registro facilitados y a las respuestas aquí definidas. No afirma integración completa con todos los módulos de las capturas.
 

@@ -31,7 +31,7 @@ Content-Type: application/json
 ## 2. Reglas que aplican a todo
 
 1. **`cliente_ref` = el ID de tu usuario.** Al registrar un cliente le das un identificador estable de tu sistema (UUID o ID de tu tabla de usuarios, como texto). Después lo envías en cada consulta (`?cliente_ref=...`) o escritura (`"cliente_ref": "..."` en el JSON). Tómalo siempre de la **sesión del usuario en tu servidor**, nunca de lo que mande el navegador: Gestiones confía en lo que dice tu servidor.
-2. **`Idempotency-Key` en cada escritura** (registro, transferencias, aperturas, pagos…): un texto único por operación, de 8 a 120 caracteres (`A-Z a-z 0-9 _ . : -`), por ejemplo un UUID. Si la petición falla por timeout, **reintenta con la misma clave y el mismo cuerpo**: Gestiones no la ejecuta dos veces. Para una operación nueva, usa una clave nueva. No la llevan: login, logout y consultas `GET`.
+2. **`Idempotency-Key` en cada escritura** (registro, transferencias, aperturas, pagos…): un texto único por operación, de 8 a 120 caracteres (`A-Z a-z 0-9 _ . : -`), por ejemplo un UUID. Si la petición falla por timeout, **reintenta con la misma clave y el mismo cuerpo**: Gestiones no la ejecuta dos veces. Para una operación nueva, usa una clave nueva. No la llevan: login, logout, cambio de contraseña, cerrar una sesión y las consultas `GET`.
 3. **Importes como texto con punto decimal:** `"150.25"`. Sin comas, sin `Q`, sin negativos. Las respuestas traen los saldos en dos formas: `saldo` (`"150.25"`) y `saldo_centavos` (`15025`, entero). Para sumar, usa centavos.
 4. **Respuestas:** éxito `{"ok": true, "data": ...}`. Las listas vienen paginadas: los registros en `data.data`, más `current_page`, `last_page`, `total`.
 5. **Errores:** `{"ok": false, "message": "...", "code": "...", "errors": {...}}`. Muestra `message` al usuario; `errors` trae los mensajes por campo cuando es `422`.
@@ -57,7 +57,9 @@ Content-Type: application/json
 | Inicio (saldo total y "Mis cuentas") | `GET /banca/resumen` |
 | Detalle / movimientos de una cuenta | `GET /cuentas/{id}/movimientos` |
 | Abrir otra cuenta | `POST /cuentas` |
+| Agregar beneficiario / confirmar cuenta destino | `GET /banca/cuentas/destino` |
 | Transferir (mis cuentas, beneficiario u otra cuenta) | `POST /transferencias` |
+| Pagar servicios (catálogo, pagar e historial) | `GET /banca/servicios`, `POST /banca/pagos-servicios`, `GET /banca/pagos-servicios` |
 | Productos (catálogo) | `GET /productos` |
 | Solicitar tarjeta de débito | `POST /solicitudes` |
 | Gestiones (seguimiento) | `GET /solicitudes`, `GET /solicitudes/{id}`, `GET /creditos` |
@@ -65,9 +67,11 @@ Content-Type: application/json
 | Mis tarjetas (límite, saldo, estados de cuenta) | `GET /tarjetas`, `GET /tarjetas/{id}/estados-cuenta` |
 | Pagar tarjeta / bloquear tarjeta | `POST /tarjetas/{id}/pagos`, `PATCH /tarjetas/{id}/estado` |
 | Mi perfil (ver y editar datos financieros) | `GET /banca/perfil`, `PATCH /banca/perfil/finanzas` |
+| Seguridad: cambiar contraseña | `POST /banca/auth/contrasena` |
+| Seguridad: sesiones activas y cerrar una sesión | `GET /banca/auth/sesiones`, `POST /banca/auth/sesiones/{id}/revocar` |
 | Avisar a los operadores del banco (opcional) | `POST /banca/eventos` |
 
-**Aún no existen en Gestiones** (se agregarán en una siguiente etapa): pago de servicios, cambio de contraseña y lista de sesiones activas del cliente. Préstamos (simulador), tipo de cambio, agencias, beneficiarios guardados y transferencias programadas pueden manejarse en Banca Virtual (para ejecutar una transferencia programada, tu servidor llama a `POST /transferencias` en la fecha indicada).
+**Se manejan en Banca Virtual** (no necesitan API de Gestiones): simulador de préstamos, tipo de cambio, agencias y cajeros, la lista de beneficiarios guardados y la programación de transferencias. Para ejecutar una transferencia programada, tu servidor llama a `POST /transferencias` en la fecha indicada. La verificación en dos pasos del cliente y "Plazo fijo" todavía no tienen API.
 
 ---
 
@@ -137,7 +141,7 @@ Gestiones valida la contraseña (no la guardes en Banca). Sin `Idempotency-Key`.
 { "correo_electronico": "juan.perez@ejemplo.com", "contrasena": "EjemploSeguro123" }
 ```
 
-Respuesta 200: `data.token_cliente` (sesión de 60 minutos), `data.expires_in` (3600) y `data.cliente` (mismo objeto del registro, incluye `cliente_ref`). Guarda `token_cliente` en la **sesión de tu servidor** (cookie HttpOnly), no en `localStorage`. Cinco contraseñas incorrectas bloquean al cliente 15 minutos; la respuesta siempre es el mismo `401 INVALID_CREDENTIALS`.
+Opcional: agrega `"dispositivo": "Chrome en Windows"` (máx. 120 caracteres) e `"ip": "IP-real-del-cliente"` para que aparezcan en *Sesiones activas* (punto 4.15). Respuesta 200: `data.token_cliente` (sesión de 60 minutos), `data.expires_in` (3600) y `data.cliente` (mismo objeto del registro, incluye `cliente_ref`). Guarda `token_cliente` en la **sesión de tu servidor** (cookie HttpOnly), no en `localStorage`. Cinco contraseñas incorrectas bloquean al cliente 15 minutos; la respuesta siempre es el mismo `401 INVALID_CREDENTIALS`.
 
 - `GET /banca/auth/sesion` con encabezado extra `X-Cliente-Token: <token_cliente>` → confirma que la sesión sigue vigente y devuelve `data.cliente` y `data.expires_at`.
 - `POST /banca/auth/logout` con `X-Cliente-Token` → cierra esa sesión.
@@ -261,6 +265,91 @@ El registro y la aceptación de gestiones ya crean alertas automáticamente. Est
 ```
 
 Tipos: `registro.iniciado` (sin `cliente_ref`), `cliente.registrado`, `cuenta.abierta`, `gestion.en_tramite` (estos tres con `cliente_ref` y como `referencia` el `id` en Gestiones).
+
+---
+
+### 4.14 Pagar servicios
+
+**Catálogo:** `GET /banca/servicios` devuelve los 7 servicios de la pantalla, con el texto del campo que debe pedir el formulario:
+
+```json
+{ "ok": true, "data": [
+  { "codigo": "empagua", "nombre": "Agua potable (EMPAGUA)", "categoria": "Agua", "campo": "Número de servicio" },
+  { "codigo": "eegsa", "nombre": "Energía eléctrica (EEGSA)", "categoria": "Energía", "campo": "Número de contador (NIS)" },
+  { "codigo": "energuate", "nombre": "Energía eléctrica (Energuate)", "categoria": "Energía", "campo": "Número de contador (NIS)" },
+  { "codigo": "impuestos-municipales", "nombre": "Impuestos municipales", "categoria": "Gobierno", "campo": "Número de boleta" },
+  { "codigo": "internet-cable", "nombre": "Internet y cable", "categoria": "Internet", "campo": "Número de contrato" },
+  { "codigo": "claro", "nombre": "Telefonía móvil (Claro)", "categoria": "Telefonía", "campo": "Número de teléfono" },
+  { "codigo": "tigo", "nombre": "Telefonía móvil (Tigo)", "categoria": "Telefonía", "campo": "Número de teléfono" }
+] }
+```
+
+**Pagar:** `POST /banca/pagos-servicios` (con `Idempotency-Key`):
+
+```json
+{ "cliente_ref": "usr_8f3a2c", "origen_id": "6716a3f0c2b1e4a5d6f7a8c0", "servicio": "eegsa", "referencia_servicio": "NIS-1234", "monto": "125.50" }
+```
+
+- `origen_id`: la cuenta del cliente que eligió en "Pagar con".
+- `referencia_servicio`: el número que escribió el cliente (4 a 40 letras, números o guiones; se guarda en mayúsculas).
+- No se aceptan otros campos.
+
+Respuesta 201 (sirve como comprobante):
+
+```json
+{ "ok": true, "data": {
+  "id": "6716b0c1…", "comprobante": "b4958d96-cfd6-4719-83e3-2678fe9e16e5",
+  "servicio": "eegsa", "servicio_nombre": "Energía eléctrica (EEGSA)", "categoria": "Energía",
+  "referencia_servicio": "NIS-1234", "cuenta_numero": "2738729879",
+  "monto": "125.50", "monto_centavos": 12550, "moneda": "GTQ", "estado": "completado",
+  "fecha": "2026-10-20T18:00:00+00:00", "saldo_disponible": "374.50"
+} }
+```
+
+Errores: `409 INSUFFICIENT_FUNDS`, `409 ACCOUNT_BLOCKED`, `403` (la cuenta no es del cliente), `422` con `errors.referencia_servicio`, `errors.servicio` o `errors.monto`. El pago también aparece en los movimientos de la cuenta (`tipo: pago_servicio`).
+
+**Historial de pagos:** `GET /banca/pagos-servicios?cliente_ref=...&page=1` → lista paginada (25 por página, más recientes primero) con los mismos campos del comprobante.
+
+> Es una simulación académica: el dinero sale de la cuenta del cliente hacia una cuenta interna de liquidación del banco; no se conecta con las empresas reales.
+
+### 4.15 Seguridad: sesiones activas
+
+Usan el encabezado `X-Cliente-Token` con el `token_cliente` del login (además del token de integración).
+
+- `GET /banca/auth/sesiones` → sesiones vigentes del cliente:
+
+```json
+{ "ok": true, "data": [
+  { "id": "6716c2…", "actual": true, "dispositivo": "Chrome en Windows", "ip": "203.0.113.7",
+    "inicio": "2026-10-20T16:55:00+00:00", "ultima_actividad": "2026-10-20T17:00:00+00:00", "vence": "2026-10-20T17:55:00+00:00" }
+] }
+```
+
+  `actual: true` marca la sesión desde la que consultas (la etiqueta "Esta sesión"). `ultima_actividad` se actualiza cada vez que llamas a `GET /banca/auth/sesion` (como máximo una vez por minuto).
+- `POST /banca/auth/sesiones/{id}/revocar` → cierra esa sesión (`data.era_actual` indica si era la tuya). Solo puede cerrar sesiones del mismo cliente.
+
+### 4.16 Seguridad: cambiar contraseña
+
+`POST /banca/auth/contrasena` con `X-Cliente-Token` (sin `Idempotency-Key`):
+
+```json
+{ "contrasena_actual": "EjemploSeguro123", "contrasena_nueva": "NuevaClave2026x" }
+```
+
+- La nueva sigue la regla del registro: 12 a 72 caracteres, con mayúscula, minúscula y número, y distinta de la actual.
+- Respuesta 200: `{ "contrasena_actualizada": true, "sesiones_cerradas": 1 }`. **Se cierran las demás sesiones del cliente**; la actual sigue activa.
+- Si la actual es incorrecta: `422` con `errors.contrasena_actual`. Cuenta como intento fallido: 5 errores bloquean al cliente 15 minutos (igual que el login). Límite: 5 intentos por minuto por sesión.
+- El campo "Repite la contraseña nueva" de la pantalla se valida en Banca; no lo envíes.
+
+### 4.17 Confirmar una cuenta destino
+
+`GET /banca/cuentas/destino?cliente_ref=usr_8f3a2c&numero=2000000002`: úsalo al **agregar un beneficiario** o antes de confirmar una transferencia, para mostrar a quién se le enviará el dinero:
+
+```json
+{ "ok": true, "data": { "numero": "2000000002", "numero_formateado": "2-000-000002", "tipo": "ahorro", "moneda": "GTQ", "titular": "María L.", "propia": false } }
+```
+
+Solo muestra el primer nombre y la inicial del apellido; nunca saldos ni datos personales. `propia: true` indica que la cuenta es del mismo cliente. Si no existe o está bloqueada: `404 ACCOUNT_NOT_FOUND`.
 
 ---
 

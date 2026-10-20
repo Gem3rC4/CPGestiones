@@ -346,25 +346,38 @@ final class OperationsTest extends TestCase
         self::assertSame(2, Movement::count());
     }
 
-    public function test_savings_accrual_rolls_back_without_funding_and_retries_once(): void
+    public function test_savings_accrual_works_on_a_fresh_install_rolls_back_failures_and_runs_once(): void
     {
         $today = now()->timezone('America/Guatemala')->toDateString();
+        $full = $this->account($this->customer('full'), Money::MAX);
+        $full->update(['tipo' => 'ahorro', 'tasa_bps' => 365]);
         $account = $this->account($this->customer('savings'), 100000);
         $account->update(['tipo' => 'ahorro', 'tasa_bps' => 365]);
         $fund = Account::where('system_key', 'intereses')->firstOrFail();
+        self::assertSame(0, $fund->saldo_centavos);
         $service = app(SavingsService::class);
         $result = $service->closeDay($today);
-        self::assertSame(0, $result['cuentas_procesadas']);
-        self::assertSame('INSUFFICIENT_FUNDS', $result['pendientes'][0]['codigo']);
-        self::assertSame(0, DailyAccrual::count());
-        self::assertSame(100000, $account->refresh()->saldo_centavos);
-        $fund->update(['saldo_centavos' => 1000]);
         $service->closeDay($today);
-        $service->closeDay($today);
+        self::assertSame(1, $result['cuentas_procesadas']);
+        self::assertSame([['cuenta_id' => (string) $full->id, 'codigo' => 'BALANCE_LIMIT']], array_map(fn ($p) => array_intersect_key($p, array_flip(['cuenta_id', 'codigo'])), $result['pendientes']));
+        self::assertSame(Money::MAX, $full->refresh()->saldo_centavos);
         self::assertSame(100010, $account->refresh()->saldo_centavos);
-        self::assertSame(990, $fund->refresh()->saldo_centavos);
+        self::assertSame(-10, $fund->refresh()->saldo_centavos, 'Interest paid is the bank expense: the counterparty goes negative.');
         self::assertSame(1, DailyAccrual::count());
         self::assertSame(2, Movement::count());
+    }
+
+    public function test_cashier_can_deposit_on_a_fresh_install_but_customers_cannot_overdraw(): void
+    {
+        $account = $this->account($this->customer('cash'), 0);
+        $vault = Account::where('system_key', 'caja')->firstOrFail();
+        self::assertSame(0, $vault->saldo_centavos);
+        $this->postJson('/api/v1/caja', ['cuenta_id' => (string) $account->id, 'tipo' => 'deposito', 'monto' => '1000.00', 'concepto' => 'Depósito inicial'], $this->headers())->assertCreated();
+        $this->postJson('/api/v1/caja', ['cuenta_id' => (string) $account->id, 'tipo' => 'retiro', 'monto' => '250.00', 'concepto' => 'Retiro en ventanilla'], $this->headers())->assertCreated();
+        $this->postJson('/api/v1/caja', ['cuenta_id' => (string) $account->id, 'tipo' => 'retiro', 'monto' => '750.01', 'concepto' => 'Retiro excesivo'], $this->headers())->assertConflict()->assertJsonPath('code', 'INSUFFICIENT_FUNDS');
+        self::assertSame(75000, $account->refresh()->saldo_centavos);
+        self::assertSame(-75000, $vault->refresh()->saldo_centavos);
+        self::assertSame(0, (int) Movement::sum('importe_centavos'));
     }
 
     public function test_outbox_retries_with_same_event_and_signs_exact_body(): void

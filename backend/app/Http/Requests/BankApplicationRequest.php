@@ -11,15 +11,17 @@ class BankApplicationRequest extends BankRegistrationRequest
     {
         parent::prepareForValidation();
         // Like ingresos_mensuales_q, the requested amount may arrive as a JSON number from the form.
-        $amount = $this->input('monto_solicitado');
-        if (is_int($amount) || is_float($amount)) {
-            $amount = json_encode($amount, JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR);
-        }
-        if (is_string($amount)) {
-            try {
-                $this->merge(['monto_solicitado' => Money::format(Money::cents($amount))]);
-            } catch (BusinessException) {
-                $this->merge(['monto_solicitado' => $amount]);
+        foreach (['monto_solicitado', 'monto_aprobado'] as $field) {
+            $amount = $this->input($field);
+            if (is_int($amount) || is_float($amount)) {
+                $amount = json_encode($amount, JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR);
+            }
+            if (is_string($amount)) {
+                try {
+                    $this->merge([$field => Money::format(Money::cents($amount))]);
+                } catch (BusinessException) {
+                    $this->merge([$field => $amount]);
+                }
             }
         }
     }
@@ -31,6 +33,8 @@ class BankApplicationRequest extends BankRegistrationRequest
         return BankCustomerRequest::identityRules() + [
             'producto' => ['required', 'string', 'max:60'],
             'monto_solicitado' => ['sometimes', 'string', 'regex:/^(0|[1-9][0-9]{0,9})(\.[0-9]{1,2})?$/D'],
+            'monto_aprobado' => ['sometimes', 'string', 'regex:/^(0|[1-9][0-9]{0,9})(\.[0-9]{1,2})?$/D'],
+            'evaluacion_ref' => ['sometimes', 'string', 'max:100'],
             'cuenta_id' => ['sometimes', 'string', 'regex:/^[a-f0-9]{24}$/D'],
             'gestion_ref' => ['sometimes', 'string', 'max:100', 'regex:/^[A-Za-z0-9_.:-]+$/D'],
             'nit' => ['sometimes', ...$this->nitRules()],

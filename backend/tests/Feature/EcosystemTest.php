@@ -227,11 +227,11 @@ final class EcosystemTest extends TestCase
         $this->getJson('/api/v1/creditos?cliente_ref=other', $this->headers())->assertOk()->assertJsonCount(0, 'data.data');
     }
 
-    public function test_operator_can_reject_in_progress_without_emitting_a_product(): void
+    public function test_staff_cannot_reject_gestiones_already_approved_by_analytics(): void
     {
         $app = $this->received();
-        $this->postJson('/api/v1/solicitudes/'.$app['id'].'/transiciones', ['estado' => 'rechazada', 'version' => 1, 'nota' => 'Documentación no corresponde al trámite'], $this->headers($this->manager))->assertOk()->assertJsonPath('data.estado', 'rechazada');
-        self::assertNull(CardApplication::first()->active_key);
+        $this->postJson('/api/v1/solicitudes/'.$app['id'].'/transiciones', ['estado' => 'rechazada', 'version' => 1, 'nota' => 'Documentación no corresponde al trámite'], $this->headers($this->manager))->assertConflict()->assertJsonPath('code', 'INVALID_STATE');
+        self::assertSame('en_tramite', CardApplication::first()->estado);
         self::assertSame(0, Credit::count());
         self::assertTrue(app(AuditService::class)->verify(CardApplication::first()));
     }

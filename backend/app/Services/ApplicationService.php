@@ -18,7 +18,11 @@ class ApplicationService
 {
     public function __construct(private ApplicationRepository $repository) {}
 
-    public function create(array $d, string $actor): array
+    /**
+     * $preEvaluated: the gestión comes from Banca Virtual after CP Analítica approved it and the customer
+     * accepted, so it waits only for the bank's final approval and no risk request is sent.
+     */
+    public function create(array $d, string $actor, bool $preEvaluated = false): array
     {
         Customer::findOrFail($d['cliente_id']);
         $product = Product::where('code', $d['producto'])->where('active', true)->firstOrFail();
@@ -38,9 +42,9 @@ class ApplicationService
         if (CardApplication::where('active_key', $d['cliente_id'].':'.$product->code)->exists()) {
             throw new BusinessException('El cliente ya tiene una gestión en curso para este producto.', 'MANAGEMENT_IN_PROGRESS');
         }
-        $application = $this->repository->create(['folio' => 'GES-'.strtoupper(substr(bin2hex(random_bytes(8)), 0, 12)), 'cliente_id' => $d['cliente_id'], 'producto' => $product->code, 'tipo' => $product->type, 'categoria' => $product->category, 'limite_solicitado_centavos' => $limit, 'cuenta_id' => $d['cuenta_id'] ?? null, 'estado' => $product->type !== 'debito' ? 'en_evaluacion' : 'aprobada', 'version' => 1, 'active_key' => $d['cliente_id'].':'.$product->code, 'policy' => ['annual_bps' => (int) $product->annual_bps, 'minimum_bps' => (int) $product->minimum_bps, 'minimum_floor_cents' => (int) $product->minimum_floor_cents, 'cutoff_day' => (int) $product->cutoff_day, 'payment_days' => (int) $product->payment_days]]);
-        app(AuditService::class)->append($application, $actor, 'solicitud_recibida', 'Gestión recibida para evaluación.');
-        if ($product->type !== 'debito') {
+        $application = $this->repository->create(['folio' => 'GES-'.strtoupper(substr(bin2hex(random_bytes(8)), 0, 12)), 'cliente_id' => $d['cliente_id'], 'producto' => $product->code, 'tipo' => $product->type, 'categoria' => $product->category, 'limite_solicitado_centavos' => $limit, 'cuenta_id' => $d['cuenta_id'] ?? null, 'estado' => $preEvaluated || $product->type !== 'debito' ? 'en_evaluacion' : 'aprobada', 'version' => 1, 'active_key' => $d['cliente_id'].':'.$product->code, 'policy' => ['annual_bps' => (int) $product->annual_bps, 'minimum_bps' => (int) $product->minimum_bps, 'minimum_floor_cents' => (int) $product->minimum_floor_cents, 'cutoff_day' => (int) $product->cutoff_day, 'payment_days' => (int) $product->payment_days]]);
+        app(AuditService::class)->append($application, $actor, 'solicitud_recibida', $preEvaluated ? 'Gestión recibida desde Banca Virtual: evaluada por CP Analítica y aceptada por el cliente. Pendiente de aprobación del banco.' : 'Gestión recibida para evaluación.');
+        if (! $preEvaluated && $product->type !== 'debito') {
             OutboxEvent::create(['event_id' => (string) Str::uuid(), 'type' => 'riesgo.solicitado', 'aggregate_id' => (string) $application->id, 'status' => 'pendiente', 'attempts' => 0, 'payload' => ['solicitud_id' => (string) $application->id, 'cliente_id' => $d['cliente_id'], 'producto' => $product->code, 'monto' => Money::format($limit)]]);
         }
 
@@ -79,7 +83,10 @@ class ApplicationService
             throw new BusinessException('La gestión cambió. Actualiza antes de continuar.', 'STALE_VERSION');
         }
         $target = $d['estado'];
-        $allowed = ['revision_manual' => ['aprobada', 'rechazada'], 'aprobada' => ['aceptada', 'cancelada'], 'aceptada' => ['en_tramite'], 'en_tramite' => ['emitida', 'rechazada']];
+        // Staff no longer reject: what reaches the inbox was already approved by CP Analítica.
+        // Gestiones from Banca Virtual wait in en_evaluacion only for the bank's final approval (emitida).
+        $fromBank = $app->origen === 'banca_virtual';
+        $allowed = ['en_evaluacion' => $fromBank ? ['emitida'] : [], 'revision_manual' => ['aprobada'], 'aprobada' => ['aceptada', 'cancelada'], 'aceptada' => ['en_tramite'], 'en_tramite' => ['emitida']];
         if (! in_array($target, $allowed[$app->estado] ?? [], true)) {
             throw new BusinessException('La transición solicitada no está permitida.', 'INVALID_STATE');
         }
@@ -91,12 +98,18 @@ class ApplicationService
         }
         if ($target === 'emitida') {
             $assigned = $app->tipo === 'debito' ? 0 : Money::cents($d['limite_asignado'] ?? '0');
-            if ($app->tipo !== 'debito' && ($assigned > (int) $app->limite_aprobado_centavos || $assigned > (int) $app->limite_solicitado_centavos || ! $app->decision || $app->decision['resultado'] === 'rechazada')) {
-                throw new BusinessException('El límite asignado no puede superar el máximo aprobado por Analítica ni el monto solicitado.', 'RISK_LIMIT_EXCEEDED', 422);
+            $maximum = (int) ($app->limite_aprobado_centavos ?? $app->limite_solicitado_centavos);
+            $evaluated = $fromBank || ($app->decision && $app->decision['resultado'] !== 'rechazada');
+            if ($app->tipo !== 'debito' && (! $evaluated || $assigned > $maximum || $assigned > (int) $app->limite_solicitado_centavos)) {
+                throw new BusinessException('El límite asignado no puede superar el máximo autorizado (Q '.Money::format($maximum).') ni el monto solicitado.', 'RISK_LIMIT_EXCEEDED', 422);
             }
             $app->limite_asignado_centavos = $assigned;
             $app->resolucion = ['operador_id' => $actor, 'fecha' => now()->toIso8601String(), 'nota' => $d['nota'], 'limite_centavos' => $assigned];
-            $d['nota'] .= ' Límite asignado: Q '.Money::format($assigned).'; máximo de Analítica: Q '.Money::format((int) $app->limite_aprobado_centavos).'.';
+            if ($app->tipo !== 'debito') {
+                $d['nota'] .= ' Límite asignado: Q '.Money::format($assigned).'; máximo autorizado: Q '.Money::format($maximum).'.';
+            }
+            // A risk request queued before approval is no longer needed.
+            OutboxEvent::where('aggregate_id', $id)->where('type', 'riesgo.solicitado')->where('status', 'pendiente')->update(['status' => 'descartado']);
             if ($app->tipo === 'prestamo') {
                 $credit = Credit::create(['solicitud_id' => $id, 'cliente_id' => $app->cliente_id, 'producto' => $app->producto, 'referencia' => 'CRE-'.strtoupper(bin2hex(random_bytes(6))), 'limite_centavos' => $assigned, 'saldo_centavos' => 0, 'desembolsado_centavos' => 0, 'estado' => 'autorizado', 'moneda' => 'GTQ', 'operador_id' => $actor]);
                 $app->credito_id = (string) $credit->id;

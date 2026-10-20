@@ -7,6 +7,7 @@ use App\Models\Account;
 use App\Models\CardApplication;
 use App\Models\Product;
 use App\Repositories\CustomerRepository;
+use App\Support\Money;
 use Illuminate\Validation\ValidationException;
 
 class BankApplicationService
@@ -14,8 +15,8 @@ class BankApplicationService
     public function __construct(private CustomerRepository $customers, private BankRegistrationService $profiles, private ApplicationService $applications, private SecurityService $security) {}
 
     /**
-     * A gestión requested in Banca Virtual lands in the operations inbox right away: credit products wait
-     * for CP Analítica (en_evaluacion) and debit cards start approved. The controller's IdempotencyService
+     * Banca Virtual sends the gestión once CP Analítica approved it and the customer accepted, so it lands in
+     * the inbox as en_evaluacion waiting only for the bank's final approval. The controller's IdempotencyService
      * holds the transaction, so the profile update, the gestión, its audit trail and the alert commit together.
      */
     public function request(array $data, string $actor): array
@@ -50,17 +51,22 @@ class BankApplicationService
                 throw ValidationException::withMessages(array_fill_keys($missing, 'Completa este dato para solicitar el producto.'));
             }
             $request['limite_solicitado'] = $data['monto_solicitado'];
+            if (isset($data['monto_aprobado']) && Money::cents($data['monto_aprobado']) > Money::cents($data['monto_solicitado'])) {
+                throw ValidationException::withMessages(['monto_aprobado' => 'El monto aprobado no puede superar el monto solicitado.']);
+            }
         }
         if (isset($data['gestion_ref']) && CardApplication::where('gestion_ref', $data['gestion_ref'])->exists()) {
             throw new BusinessException('Ya existe una gestión con ese número de Banca Virtual.', 'MANAGEMENT_CONFLICT');
         }
 
-        $created = $this->applications->create($request, $actor);
+        $created = $this->applications->create($request, $actor, preEvaluated: true);
         $application = CardApplication::findOrFail($created['id']);
         $profile = $this->profiles->profile($customer);
         $application->update(['origen' => 'banca_virtual', 'solicitante' => array_intersect_key($profile, array_flip(['nombre_completo', 'correo_electronico', 'dpi_enmascarado', 'nit', 'telefono', 'fecha_nacimiento', 'tipo_empleo', 'ingresos_mensuales_q', 'antiguedad_laboral_meses']))]
-            + (isset($data['gestion_ref']) ? ['gestion_ref' => $data['gestion_ref']] : []));
-        app(AlertService::class)->publish('gestion.recibida:'.$application->id, 'solicitudes.read', 'Nueva gestión recibida', $customer->nombre.' solicitó '.$product->name.' desde Banca Virtual.', 'solicitudes', (string) $application->id);
+            + (isset($data['gestion_ref']) ? ['gestion_ref' => $data['gestion_ref']] : [])
+            // Optional maximum approved by CP Analítica, informed by Banca: caps the limit the operator can assign.
+            + (isset($data['monto_aprobado']) && $product->type !== 'debito' ? ['limite_aprobado_centavos' => Money::cents($data['monto_aprobado']), 'decision' => ['referencia' => $data['evaluacion_ref'] ?? 'banca-virtual', 'resultado' => 'aprobada', 'motivo' => 'Evaluación aprobada por CP Analítica e informada por Banca Virtual.', 'received_at' => now()->toIso8601String()]] : []));
+        app(AlertService::class)->publish('gestion.recibida:'.$application->id, 'solicitudes.read', 'Gestión por aprobar', $customer->nombre.' aceptó '.$product->name.' en Banca Virtual. Revisa y apruébala.', 'solicitudes', (string) $application->id);
 
         return $application->refresh()->toArray();
     }

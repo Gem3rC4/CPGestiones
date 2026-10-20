@@ -69,9 +69,8 @@ Content-Type: application/json
 | Transferir (mis cuentas, beneficiario u otra cuenta) | `POST /transferencias` |
 | Pagar servicios (catálogo, pagar e historial) | `GET /banca/servicios`, `POST /banca/pagos-servicios`, `GET /banca/pagos-servicios` |
 | Productos (catálogo) | `GET /productos` |
-| Solicitar un producto (tarjeta, crédito, débito) | `POST /banca/solicitudes` |
+| Enviar al banco la gestión aprobada por Analítica y aceptada por el cliente | `POST /banca/solicitudes` |
 | Gestiones en línea (seguimiento) | `GET /solicitudes`, `GET /solicitudes/{id}`, `GET /creditos` |
-| Aceptar o rechazar la oferta | `POST /solicitudes/{id}/transiciones` |
 | Mis tarjetas (límite, saldo, estados de cuenta) | `GET /tarjetas`, `GET /tarjetas/{id}/estados-cuenta` |
 | Pagar tarjeta / bloquear tarjeta | `POST /tarjetas/{id}/pagos`, `PATCH /tarjetas/{id}/estado` |
 | Mi perfil (ver y editar datos financieros) | `GET /banca/perfil`, `PATCH /banca/perfil/finanzas` |
@@ -219,7 +218,7 @@ Lista paginada con `code`, `name`, `type` (`ahorro`, `monetaria`, `debito`, `cre
 
 ### 4.10 Solicitar un producto (gestión) — `POST /banca/solicitudes`
 
-Es la única forma de crear una gestión: el personal del banco ya no puede crearlas, solo procesarlas. Apenas el cliente la envía, **aparece en el buzón "Gestiones" del banco** y el personal recibe una alerta.
+**Cuándo llamarla:** cuando CP Analítica ya aprobó la solicitud y el cliente **aceptó** la oferta en tu app (después del paso "Aceptaste"). Es la única forma de crear una gestión en el banco. Llega al buzón "Gestiones" como **En evaluación** (pendiente de la aprobación final del banco) y el personal recibe la alerta "Gestión por aprobar". El banco **no la rechaza**: solo la aprueba y emite el producto.
 
 **Aquí se piden los datos detallados del cliente** (la primera vez). Si ya están en su perfil (ver `GET /banca/perfil`, campo `perfil_completo`), puedes omitirlos o enviarlos actualizados.
 
@@ -230,6 +229,8 @@ Tarjeta de crédito o préstamo:
   "dpi": "3068226670601",
   "producto": "credito-personal",
   "monto_solicitado": "25000.00",
+  "monto_aprobado": "20000.00",
+  "evaluacion_ref": "eval-100040",
   "gestion_ref": "100040",
   "nit": "116698640",
   "telefono": "55513002",
@@ -242,6 +243,7 @@ Tarjeta de crédito o préstamo:
 - `producto`: `credito-clasica`, `credito-oro`, `credito-platino`, `credito-personal`, `credito-vehicular`, `credito-hipotecario` o `debito`.
 - `monto_solicitado`: obligatorio para créditos y tarjetas de crédito (no puede pasar del máximo de la categoría: `422 PRODUCT_LIMIT`).
 - `gestion_ref`: opcional, tu número de gestión ("Gestión #100040").
+- `monto_aprobado` y `evaluacion_ref`: opcionales. Si Analítica aprobó un monto menor al solicitado, envíalo: el personal no podrá asignar un límite mayor. Si no lo envías, el máximo es el monto solicitado.
 - Datos del cliente: `nit`, `tipo_empleo` (`Asalariado` / `Independiente`), `ingresos_mensuales_q`, `antiguedad_laboral_meses` (no mayor que su edad en meses) y `telefono` (opcional). Si falta alguno que el perfil tampoco tiene, responde `422` con `errors` de cada dato faltante ("Completa este dato para solicitar el producto."). La fecha de nacimiento no se puede cambiar aquí.
 
 Tarjeta de débito:
@@ -252,31 +254,23 @@ Tarjeta de débito:
 
 `cuenta_id` es opcional: si no lo envías se vincula su primera cuenta activa. Sin cuentas: `422` en `cuenta_id` ("Abre una cuenta…").
 
-Respuesta 201 con la gestión: `id` (**guárdalo**), `folio`, `producto`, `estado` (`en_evaluacion` para créditos, `aprobada` para débito), `version`, `limite_solicitado_centavos`, `gestion_ref`, `solicitante` y `created_at`. Otros errores: `409 MANAGEMENT_IN_PROGRESS` ("Ya tienes una gestión en curso" de ese producto), `422` en `producto` si no existe.
+Respuesta 201 con la gestión: `id` (**guárdalo**), `folio`, `producto`, `estado` (`en_evaluacion`), `version`, `limite_solicitado_centavos`, `gestion_ref`, `solicitante` y `created_at`. Otros errores: `409 MANAGEMENT_IN_PROGRESS` ("Ya tienes una gestión en curso" de ese producto), `422` en `producto` si no existe.
 
 ### 4.11 Gestiones en línea (seguimiento)
 
-- `GET /solicitudes?dpi=...` → gestiones del cliente: `id`, `folio`, `gestion_ref`, `producto`, `estado`, `version`, `limite_solicitado_centavos`, `limite_aprobado_centavos`, `limite_asignado_centavos`, `tarjeta_id` / `credito_id`, `created_at`. Filtro opcional `&estado=en_tramite`.
+- `GET /solicitudes?dpi=...` → gestiones del cliente: `id`, `folio`, `gestion_ref`, `producto`, `estado`, `version`, `limite_solicitado_centavos`, `limite_aprobado_centavos`, `limite_asignado_centavos`, `tarjeta_id` / `credito_id`, `created_at`. Filtro opcional `&estado=en_evaluacion` o `&estado=emitida`.
 - `GET /solicitudes/{id}?dpi=...` → `data.solicitud` y `data.historial` (cada cambio de estado con fecha y nota, ideal para la línea de tiempo).
 - `GET /creditos?dpi=...` → préstamos autorizados con `referencia`, `limite_centavos` y `estado`.
 
 Cómo se ven los pasos de tu pantalla:
 
-| Paso en la app | `estado` en Gestiones | Quién lo mueve |
+| Paso en la app | Dónde ocurre | `estado` en Gestiones |
 | --- | --- | --- |
-| Enviada / En evaluación | `en_evaluacion` | Banca, al crearla con `POST /banca/solicitudes` |
-| Aprobada (con límite) / No aprobada | `aprobada` / `rechazada` (o `revision_manual`) | CP Analítica (o el gerente en revisión manual) |
-| Aceptaste | `aceptada` | Banca, cuando el cliente acepta (abajo) |
-| En trámite — "El banco gestiona tu producto" | `en_tramite` | Personal del banco |
-| Completada / Producto emitido | `emitida` | Personal del banco, al asignar el límite y emitir |
+| Enviada · En evaluación · Aprobada · Aceptaste | En Banca Virtual con CP Analítica (todavía no existe en Gestiones) | — |
+| En trámite — "El banco gestiona tu producto" | Banca la envía con `POST /banca/solicitudes` | `en_evaluacion` |
+| Completada / Producto emitido | El personal del banco la aprueba en el panel y asigna el límite | `emitida` |
 
-**Aceptar o rechazar la oferta** (solo con la gestión en `aprobada`): `POST /solicitudes/{id}/transiciones` con `Idempotency-Key`:
-
-```json
-{ "dpi": "3068226670601", "version": 2, "estado": "aceptada", "nota": "Aceptada por el cliente en Banca Virtual", "referencia_aceptacion": "consent-100040" }
-```
-
-Para rechazarla usa `"estado": "cancelada"` (sin `referencia_aceptacion`). `version` es la actual de la gestión; si cambió, recibes `409 STALE_VERSION`: vuelve a consultarla.
+Cuando veas `emitida`, la gestión trae `limite_asignado_centavos` (el límite que asignó el banco; muéstralo al cliente) y `tarjeta_id` (tarjetas) o `credito_id` (préstamos). Para enterarte, consulta `GET /solicitudes?dpi=...` al abrir "Gestiones en línea".
 
 ### 4.12 Mis tarjetas
 

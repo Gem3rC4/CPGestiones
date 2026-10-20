@@ -6930,8 +6930,8 @@
         "tags": [
           "banca"
         ],
-        "summary": "Solicitar una gestión (único origen de gestiones)",
-        "description": "Cae de inmediato en el buzón de Gestiones (en_evaluacion para créditos, aprobada para débito) y completa el perfil con los datos detallados. 422 lista los datos faltantes.",
+        "summary": "Enviar al banco una gestión aprobada por Analítica y aceptada por el cliente",
+        "description": "Llega al buzón como en_evaluacion (pendiente de la aprobación final del banco); el personal la aprueba y pasa a emitida. No genera solicitud de riesgo. monto_aprobado (opcional) limita el límite asignable. 422 lista los datos faltantes.",
         "parameters": [
           {
             "name": "Idempotency-Key",
@@ -7009,6 +7009,21 @@
                   },
                   "fecha_nacimiento": {
                     "type": "string"
+                  },
+                  "monto_aprobado": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ],
+                    "description": "Máximo aprobado por CP Analítica (opcional)"
+                  },
+                  "evaluacion_ref": {
+                    "type": "string",
+                    "maxLength": 100
                   }
                 }
               }

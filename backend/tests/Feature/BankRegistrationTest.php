@@ -4,7 +4,9 @@ namespace Tests\Feature;
 
 use App\Models\AccessToken;
 use App\Models\Account;
+use App\Models\Card;
 use App\Models\CardApplication;
+use App\Models\Credit;
 use App\Models\Customer;
 use App\Models\IdempotencyRecord;
 use App\Models\OperationAlert;
@@ -12,6 +14,7 @@ use App\Models\OutboxEvent;
 use App\Models\Product;
 use App\Models\SecurityEvent;
 use App\Models\User;
+use App\Services\AuditService;
 use App\Services\AuthService;
 use App\Services\InstallService;
 use App\Services\RegistrationUpgradeService;
@@ -341,17 +344,47 @@ final class BankRegistrationTest extends TestCase
             ->assertJsonPath('data.solicitante.ingresos_mensuales_q', '9500.00')->assertJsonPath('data.gestion_ref', '100040')->json('data');
         self::assertSame(2, Customer::first()->perfil_version);
         $this->getJson('/api/v1/banca/perfil?dpi=3068226670601', $this->headers())->assertJsonPath('data.perfil_completo', true);
-        self::assertSame('Nueva gestión recibida', OperationAlert::where('recurso_id', $gestion['id'])->first()->titulo);
-        self::assertSame(1, OutboxEvent::where('type', 'riesgo.solicitado')->count());
+        self::assertSame('Gestión por aprobar', OperationAlert::where('recurso_id', $gestion['id'])->first()->titulo);
+        self::assertSame(0, OutboxEvent::where('type', 'riesgo.solicitado')->count(), 'Analytics already evaluated it before Banca sent it.');
         $this->postJson('/api/v1/banca/solicitudes', ['dpi' => '3068226670601', 'producto' => 'credito-oro', 'monto_solicitado' => '100.00'], $this->headers('ges-05'))->assertConflict()->assertJsonPath('code', 'MANAGEMENT_IN_PROGRESS');
         $this->postJson('/api/v1/banca/solicitudes', ['dpi' => '3068226670601', 'producto' => 'credito-platino', 'monto_solicitado' => '999999.00'], $this->headers('ges-06'))->assertUnprocessable()->assertJsonPath('code', 'PRODUCT_LIMIT');
         $this->postJson('/api/v1/banca/solicitudes', ['dpi' => '3068226670601', 'producto' => 'debito'], $this->headers('ges-07'))->assertUnprocessable()->assertJsonValidationErrors('cuenta_id');
         $this->postJson('/api/v1/banca/cuentas', ['dpi' => '3068226670601', 'producto' => 'ahorro'], $this->headers('ges-08'))->assertCreated();
-        $this->postJson('/api/v1/banca/solicitudes', ['dpi' => '3068226670601', 'producto' => 'debito'], $this->headers('ges-09'))->assertCreated()->assertJsonPath('data.estado', 'aprobada');
+        $this->postJson('/api/v1/banca/solicitudes', ['dpi' => '3068226670601', 'producto' => 'debito'], $this->headers('ges-09'))->assertCreated()->assertJsonPath('data.estado', 'en_evaluacion');
         $this->getJson('/api/v1/solicitudes?dpi=3068226670601', $this->headers())->assertOk()->assertJsonCount(2, 'data.data');
         $customer = (string) Customer::first()->id;
         $this->postJson('/api/v1/solicitudes', ['cliente_id' => $customer, 'producto' => 'credito-clasica', 'limite_solicitado' => '1000.00'], $this->headers('staff-ges', $this->staff()))
             ->assertForbidden()->assertJsonPath('code', 'BANK_ORIGIN_REQUIRED');
+    }
+
+    public function test_staff_approve_banca_gestiones_assigning_a_limit_up_to_the_authorized_maximum(): void
+    {
+        $this->postJson('/api/v1/banca/registro', $this->minimal(), $this->headers('reg'))->assertCreated();
+        $details = ['nit' => '1234567-8', 'tipo_empleo' => 'Asalariado', 'ingresos_mensuales_q' => 9500, 'antiguedad_laboral_meses' => 30];
+        $personal = $this->postJson('/api/v1/banca/solicitudes', ['dpi' => '3068226670601', 'producto' => 'credito-personal', 'monto_solicitado' => '30000.00'] + $details, $this->headers('ap-01'))->json('data');
+        $card = $this->postJson('/api/v1/banca/solicitudes', ['dpi' => '3068226670601', 'producto' => 'credito-oro', 'monto_solicitado' => '20000.00', 'monto_aprobado' => '15000.00', 'evaluacion_ref' => 'eval-77'], $this->headers('ap-02'))
+            ->assertCreated()->assertJsonPath('data.limite_aprobado_centavos', 1500000)->json('data');
+        $this->postJson('/api/v1/banca/solicitudes', ['dpi' => '3068226670601', 'producto' => 'credito-platino', 'monto_solicitado' => '100.00', 'monto_aprobado' => '200.00'], $this->headers('ap-03'))->assertUnprocessable()->assertJsonValidationErrors('monto_aprobado');
+        $manager = $this->staff('gerente');
+        $approve = fn (array $gestion, array $body, string $key, ?string $token = null) => $this->postJson('/api/v1/solicitudes/'.$gestion['id'].'/transiciones', $body + ['version' => 1, 'nota' => 'Gestión aprobada por el banco.'], $this->headers($key, $token ?? $manager));
+
+        $approve($personal, ['estado' => 'rechazada'], 'ap-04')->assertConflict()->assertJsonPath('code', 'INVALID_STATE');
+        $approve($personal, ['estado' => 'emitida', 'limite_asignado' => '30000.01'], 'ap-05')->assertUnprocessable()->assertJsonPath('code', 'RISK_LIMIT_EXCEEDED');
+        $approve($personal, ['estado' => 'emitida', 'limite_asignado' => '25000.00'], 'ap-06', $this->staff('cajero'))->assertForbidden();
+        $approve($personal, ['estado' => 'emitida', 'limite_asignado' => '25000.00', 'dpi' => '3068226670601'], 'ap-07', $this->token)->assertForbidden();
+        $approve($personal, ['estado' => 'emitida', 'limite_asignado' => '25000.00'], 'ap-08')->assertOk()->assertJsonPath('data.estado', 'emitida')->assertJsonPath('data.limite_asignado_centavos', 2500000);
+        self::assertSame(2500000, Credit::first()->limite_centavos);
+        $approve($card, ['estado' => 'emitida', 'limite_asignado' => '15000.01'], 'ap-09')->assertUnprocessable()->assertJsonPath('code', 'RISK_LIMIT_EXCEEDED');
+        $approve($card, ['estado' => 'emitida', 'limite_asignado' => '15000.00'], 'ap-10')->assertOk();
+        self::assertSame(1500000, Card::where('tipo', 'credito')->first()->limite_centavos);
+
+        $this->postJson('/api/v1/banca/cuentas', ['dpi' => '3068226670601', 'producto' => 'ahorro'], $this->headers('ap-11'))->assertCreated();
+        $debit = $this->postJson('/api/v1/banca/solicitudes', ['dpi' => '3068226670601', 'producto' => 'debito'], $this->headers('ap-12'))->json('data');
+        $approve($debit, ['estado' => 'emitida'], 'ap-13')->assertOk()->assertJsonPath('data.estado', 'emitida');
+        self::assertSame(1, Card::where('tipo', 'debito')->count());
+        $this->getJson('/api/v1/solicitudes?dpi=3068226670601&estado=emitida', $this->headers())->assertOk()->assertJsonCount(3, 'data.data');
+        $this->getJson('/api/v1/solicitudes?estado=en_evaluacion', $this->headers('list', $manager))->assertOk()->assertJsonCount(0, 'data.data');
+        self::assertTrue(app(AuditService::class)->verify(CardApplication::findOrFail($personal['id'])));
     }
 
     public function test_forgotten_password_is_reset_with_dpi_email_and_birth_date(): void

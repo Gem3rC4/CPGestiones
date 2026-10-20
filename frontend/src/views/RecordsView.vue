@@ -9,7 +9,7 @@ const search = ref(''), state = ref('')
 watch(() => props.module, () => { search.value = ''; state.value = '' })
 const customer = id => props.clients.find(x => identifier(x) === id)?.nombre || 'Cliente registrado'
 const configurations = {
-  solicitudes: { title:'Gestiones',subtitle:'Buzón de las gestiones que los clientes solicitan desde Banca Virtual: da seguimiento, asigna el límite aprobado y emite el producto.',columns:['GESTIÓN / CLIENTE','PRODUCTO','MONTO SOLICITADO','ESTADO','RECIBIDA'],states:['en_tramite','emitida','rechazada'] },
+  solicitudes: { title:'Gestiones',subtitle:'Buzón de las gestiones que los clientes solicitan desde Banca Virtual: da seguimiento, asigna el límite aprobado y emite el producto.',columns:['GESTIÓN / CLIENTE','PRODUCTO','MONTO SOLICITADO','ESTADO','RECIBIDA'],states:['en_evaluacion','emitida'] },
   creditos: { title:'Créditos autorizados',subtitle:'Créditos emitidos por el banco. La autorización no realiza un desembolso.',columns:['REFERENCIA / TITULAR','PRODUCTO','MONTO AUTORIZADO','SALDO','ESTADO'] },
   cuentas: { title:'Cuentas bancarias',subtitle:'Consulta saldos y movimientos de cuentas de ahorro y monetarias.',create:'Abrir cuenta',permission:'cuentas.write',columns:['CUENTA / TITULAR','TIPO','SALDO DISPONIBLE','ESTADO','APERTURA'],states:['activa','bloqueada'] },
   tarjetas: { title:'Tarjetas emitidas',subtitle:'Controla límites, consumos y pagos de tarjetas.',columns:['REFERENCIA / TITULAR','PRODUCTO','LÍMITE','DEUDA ACTUAL','ESTADO'] },

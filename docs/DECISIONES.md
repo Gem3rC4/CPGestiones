@@ -75,3 +75,9 @@ Las alertas se guardan en MongoDB y se consultan cada cinco segundos mientras el
 - Se eliminaron "Referencia en Banca Virtual" y "Cuotas mensuales de deuda" del registro asistido. Los clientes antiguos conservan su referencia y la API la sigue aceptando por compatibilidad.
 - "Olvidé mi contraseña" no usa correo, por decisión del equipo: el cliente confirma DPI, correo y fecha de nacimiento. Es menos seguro que un código por correo porque esos datos no son secretos; los intentos fallidos comparten el bloqueo del login y se limitan a 5 por minuto.
 - Las contraseñas de clientes piden 8 caracteres con letras y números, igual que las pantallas de Banca. Las del personal siguen pidiendo 12 con mayúscula, minúscula y número.
+
+## Aprobación final en Gestiones (20/10/2026)
+
+- La evaluación de CP Analítica y la aceptación del cliente ocurren en Banca Virtual. Banca envía la gestión después con `POST /banca/solicitudes` y llega como **En evaluación**, que en Gestiones significa *pendiente de la aprobación final del banco*. No se envía una nueva solicitud de riesgo.
+- El personal con permiso de gestión (gerente o administrador) usa **Aprobar**: asigna el límite, que no puede superar el monto aprobado por Analítica si Banca lo informó, ni el monto solicitado. Así se emite la tarjeta o el crédito y la gestión pasa a **Emitida**.
+- El personal ya no rechaza gestiones: llegan aprobadas por Analítica. Los filtros del buzón son Todos, En evaluación y Emitida.

@@ -17,7 +17,7 @@ class InstallService
     public function indexes(): void
     {
         $db = DB::connection('mongodb')->getDatabase();
-        foreach (['usuarios', 'tokens', 'clientes', 'productos', 'cuentas', 'movimientos', 'idempotencias', 'solicitudes', 'tarjetas', 'estados_cuenta', 'empresas', 'planillas', 'devengos', 'bitacora', 'seguridad', 'eventos_salida', 'sesiones_clientes', 'alertas', 'eventos_entrada', 'evaluaciones_riesgo', 'creditos', 'pagos_servicios'] as $collection) {
+        foreach (['usuarios', 'tokens', 'clientes', 'productos', 'cuentas', 'movimientos', 'idempotencias', 'solicitudes', 'tarjetas', 'estados_cuenta', 'empresas', 'planillas', 'devengos', 'bitacora', 'seguridad', 'eventos_salida', 'sesiones_clientes', 'alertas', 'eventos_entrada', 'evaluaciones_riesgo', 'creditos', 'pagos_servicios', 'colaboradores', 'configuracion_integraciones'] as $collection) {
             try {
                 $db->createCollection($collection);
             } catch (CommandException $e) {
@@ -55,6 +55,7 @@ class InstallService
             ['eventos_salida', ['event_id' => 1], ['unique' => true]], ['eventos_salida', ['status' => 1], []],
             ['pagos_servicios', ['cliente_id' => 1, 'created_at' => -1], []], ['pagos_servicios', ['transaccion_id' => 1], ['unique' => true]],
             ['sesiones_clientes', ['cliente_id' => 1], []],
+            ['colaboradores', ['empresa_id' => 1, 'puesto' => 1], []], ['configuracion_integraciones', ['sistema' => 1], ['unique' => true]],
         ];
         // external_ref used to be unique for every document; customers now may have no Banca reference.
         foreach ($db->selectCollection('clientes')->listIndexes() as $index) {

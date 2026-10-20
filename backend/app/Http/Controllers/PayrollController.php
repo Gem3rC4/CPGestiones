@@ -7,6 +7,7 @@ use App\Http\Requests\OperationRequest;
 use App\Models\Account;
 use App\Models\Company;
 use App\Models\User;
+use App\Services\CorporateService;
 use App\Services\PayrollService;
 use App\Services\SecurityService;
 
@@ -20,6 +21,16 @@ class PayrollController extends ApiController
     public function approve(OperationRequest $r, string $id, PayrollService $s)
     {
         return $this->mutation($r, fn ($d, $a) => $s->approve($id, $a));
+    }
+
+    public function collaborator(OperationRequest $r, CorporateService $s)
+    {
+        return $this->mutation($r, fn ($d, $a) => $s->addCollaborator($d, $a), 201);
+    }
+
+    public function demo(OperationRequest $r, CorporateService $s)
+    {
+        return $this->mutation($r, fn ($d, $a) => $s->seedDemo($d['contrasena'], $a), 201);
     }
 
     public function company(OperationRequest $r)

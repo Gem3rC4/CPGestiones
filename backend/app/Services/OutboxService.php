@@ -10,11 +10,14 @@ class OutboxService
     public function deliver(): int
     {
         $sent = 0;
+        // URLs and secrets come from the panel (Integraciones) or, as a fallback, from .env.
+        $targets = ['banca' => app(IntegrationSettings::class)->get('banca'), 'riesgos' => app(IntegrationSettings::class)->get('riesgos')];
         OutboxEvent::where('status', 'enviando')->where('lease_until', '<', now()->toIso8601String())->update(['status' => 'pendiente']);
         foreach (OutboxEvent::where('status', 'pendiente')->orderBy('created_at')->limit(50)->get() as $event) {
             $risk = $event->type === 'riesgo.solicitado';
-            $url = config($risk ? 'operations.risk_url' : 'operations.bank_url');
-            if (! $url || (! $risk && ! config('operations.bank_secret')) || ($risk && ! config('operations.risk_token'))) {
+            $target = $targets[$risk ? 'riesgos' : 'banca'];
+            $url = $target['url'];
+            if (! $url || ! $target['secret']) {
                 continue;
             }
             if ($event->next_attempt && $event->next_attempt > now()->toIso8601String()) {
@@ -32,9 +35,9 @@ class OutboxService
                 $timestamp = (string) time();
                 $http = Http::timeout(15)->connectTimeout(5)->withoutRedirecting()->acceptJson()->withHeaders(['Idempotency-Key' => $event->event_id]);
                 if ($risk) {
-                    $http = $http->withToken(config('operations.risk_token'));
+                    $http = $http->withToken($target['secret']);
                 } else {
-                    $http = $http->withHeaders(['X-CP-Timestamp' => $timestamp, 'X-CP-Signature' => hash_hmac('sha256', $timestamp.'.'.$body, config('operations.bank_secret'))]);
+                    $http = $http->withHeaders(['X-CP-Timestamp' => $timestamp, 'X-CP-Signature' => hash_hmac('sha256', $timestamp.'.'.$body, $target['secret'])]);
                 }
                 $response = $http->withBody($body, 'application/json')->post($url);
                 $response->throw();

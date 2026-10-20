@@ -23,7 +23,7 @@ return [
     ],
     'roles' => [
         'administrador' => ['*'],
-        'gerente' => ['dashboard.read', 'clientes.read', 'clientes.write', 'cuentas.read', 'cuentas.write', 'cuentas.manage', 'dinero.write', 'caja.write', 'productos.read', 'solicitudes.read', 'solicitudes.write', 'solicitudes.manage', 'tarjetas.read', 'tarjetas.write', 'empresas.read', 'empresas.write', 'planillas.read', 'planillas.write', 'planillas.approve', 'bitacora.read', 'integraciones.read'],
+        'gerente' => ['dashboard.read', 'clientes.read', 'clientes.write', 'clientes.manage', 'cuentas.read', 'cuentas.write', 'cuentas.manage', 'dinero.write', 'caja.write', 'productos.read', 'solicitudes.read', 'solicitudes.write', 'solicitudes.manage', 'tarjetas.read', 'tarjetas.write', 'empresas.read', 'empresas.write', 'planillas.read', 'planillas.write', 'planillas.approve', 'bitacora.read', 'integraciones.read'],
         'cajero' => ['dashboard.read', 'clientes.read', 'clientes.write', 'cuentas.read', 'cuentas.write', 'dinero.write', 'caja.write', 'productos.read', 'solicitudes.read', 'solicitudes.write', 'tarjetas.read'],
         'analista' => ['dashboard.read', 'clientes.read', 'cuentas.read', 'productos.read', 'solicitudes.read', 'bitacora.read'],
         'auditor' => ['dashboard.read', 'clientes.read', 'cuentas.read', 'productos.read', 'solicitudes.read', 'tarjetas.read', 'empresas.read', 'planillas.read', 'bitacora.read', 'seguridad.read', 'integraciones.read'],

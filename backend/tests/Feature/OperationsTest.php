@@ -8,8 +8,10 @@ use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\Card;
 use App\Models\CardApplication;
+use App\Models\Collaborator;
 use App\Models\Company;
 use App\Models\Customer;
+use App\Models\CustomerSession;
 use App\Models\DailyAccrual;
 use App\Models\IdempotencyRecord;
 use App\Models\Movement;
@@ -402,5 +404,113 @@ final class OperationsTest extends TestCase
             $timestamp = $request->header('X-CP-Timestamp')[0];
             self::assertSame(hash_hmac('sha256', $timestamp.'.'.$request->body(), 'test-shared-secret'), $request->header('X-CP-Signature')[0]);
         }
+    }
+
+    public function test_dashboard_shows_the_two_inbox_stages_and_the_global_registry(): void
+    {
+        $customer = $this->customer('global');
+        $customer->update(['password' => Hash::make('clave2026')]);
+        $savings = $this->account($customer, 30000);
+        $savings->update(['tipo' => 'ahorro']);
+        $this->account($this->customer('second'), 12000);
+        Card::create(['cliente_id' => (string) $customer->id, 'solicitud_id' => 'g', 'referencia' => 'CPG', 'tipo' => 'credito', 'estado' => 'activa', 'limite_centavos' => 500000, 'principal_centavos' => 1000, 'interes_centavos' => 50]);
+        $data = $this->getJson('/api/v1/dashboard', $this->headers())->assertOk()->json('data');
+        self::assertSame(['en_evaluacion', 'emitida'], array_column($data['por_estado'], 'estado'));
+        self::assertSame(42000, $data['saldo_centavos']);
+        $global = $data['global'];
+        self::assertSame([2, 1, 1, 1, 30000, 12000, 1, 500000, 1050], [$global['clientes'], $global['clientes_con_app'], $global['cuentas_ahorro'], $global['cuentas_monetarias'], $global['saldo_ahorro_centavos'], $global['saldo_monetario_centavos'], $global['tarjetas_credito'], $global['limite_credito_centavos'], $global['deuda_tarjetas_centavos']]);
+    }
+
+    public function test_global_ledger_is_staff_only_and_filters_by_movement_type(): void
+    {
+        $a = $this->account($this->customer('ledger-a'));
+        $b = $this->account($this->customer('ledger-b'), 0);
+        $this->postJson('/api/v1/transferencias', ['origen_id' => (string) $a->id, 'destino_id' => (string) $b->id, 'monto' => '10.00', 'concepto' => 'Movimiento global'], $this->headers())->assertCreated();
+        $this->postJson('/api/v1/caja', ['cuenta_id' => (string) $b->id, 'tipo' => 'deposito', 'monto' => '5.00', 'concepto' => 'Depósito en caja'], $this->headers())->assertCreated();
+        $all = $this->getJson('/api/v1/movimientos', $this->headers())->assertOk()->json('data');
+        self::assertSame(4, $all['total']);
+        self::assertContains($a->numero, array_column($all['data'], 'cuenta_numero'));
+        $this->getJson('/api/v1/movimientos?estado=deposito', $this->headers())->assertOk()->assertJsonPath('data.total', 2);
+        $this->getJson('/api/v1/movimientos?cuenta_id='.$a->id, $this->headers())->assertOk()->assertJsonPath('data.total', 1);
+        $this->getJson('/api/v1/movimientos', $this->headers(app(AuthService::class)->issueService('banca')))->assertForbidden();
+        $this->getJson('/api/v1/movimientos', $this->headers($this->token($this->user('empresa_operador', 'corp'))))->assertForbidden();
+    }
+
+    public function test_staff_administer_customer_credentials_and_sessions(): void
+    {
+        $customer = $this->customer('access');
+        $customer->update(['email' => 'acceso@example.test', 'password' => Hash::make('clave2026'), 'active' => true, 'failed_attempts' => 4, 'locked_until' => now()->addMinutes(10)]);
+        CustomerSession::create(['token_hash' => hash('sha256', 'one'), 'cliente_id' => (string) $customer->id, 'expires_at' => now()->addHour(), 'dispositivo' => 'Chrome']);
+        CustomerSession::create(['token_hash' => hash('sha256', 'two'), 'cliente_id' => (string) $customer->id, 'expires_at' => now()->addHour()]);
+        $view = $this->getJson('/api/v1/clientes/'.$customer->id.'/acceso', $this->headers())->assertOk()->json('data');
+        self::assertSame([true, true, 4, 2], [$view['acceso_app'], $view['bloqueado_hasta'] !== null, $view['intentos_fallidos'], count($view['sesiones'])]);
+        $this->postJson('/api/v1/clientes/'.$customer->id.'/sesiones/cerrar', [], $this->headers($this->token($this->user('cajero', 'cash-access'))))->assertForbidden();
+        $this->postJson('/api/v1/clientes/'.$customer->id.'/sesiones/cerrar', [], $this->headers())->assertOk()->assertJsonPath('data.sesiones_cerradas', 2);
+        $this->patchJson('/api/v1/clientes/'.$customer->id.'/acceso', ['activo' => false, 'nota' => 'Solicitud del cliente por robo de celular'], $this->headers())->assertOk()->assertJsonPath('data.activo', false);
+        $bank = app(AuthService::class)->issueService('banca');
+        $this->postJson('/api/v1/banca/auth/login', ['correo_electronico' => 'acceso@example.test', 'contrasena' => 'clave2026'], $this->headers($bank))->assertUnauthorized();
+        $this->patchJson('/api/v1/clientes/'.$customer->id.'/acceso', ['activo' => true, 'nota' => 'Identidad verificada en agencia'], $this->headers())->assertOk()
+            ->assertJsonPath('data.activo', true)->assertJsonPath('data.bloqueado_hasta', null)->assertJsonPath('data.intentos_fallidos', 0);
+        $this->postJson('/api/v1/banca/auth/login', ['correo_electronico' => 'acceso@example.test', 'contrasena' => 'clave2026'], $this->headers($bank))->assertOk();
+        self::assertSame(['acceso_cliente_bloqueado', 'acceso_cliente_activado'], SecurityEvent::whereIn('action', ['acceso_cliente_bloqueado', 'acceso_cliente_activado'])->orderBy('created_at')->pluck('action')->all());
+    }
+
+    public function test_banca_connection_is_configured_from_the_panel_tested_and_used_by_the_outbox(): void
+    {
+        $url = 'https://banca.example.test/api/gestiones/webhook';
+        $this->patchJson('/api/v1/integraciones/conexiones/banca', ['url' => $url], $this->headers())->assertUnprocessable()->assertJsonPath('code', 'SECRET_REQUIRED');
+        $this->patchJson('/api/v1/integraciones/conexiones/banca', ['url' => 'no-es-url', 'secreto' => 'secreto-compartido-123'], $this->headers())->assertUnprocessable()->assertJsonValidationErrors('url');
+        $this->patchJson('/api/v1/integraciones/conexiones/otro', ['url' => $url, 'secreto' => 'secreto-compartido-123'], $this->headers())->assertUnprocessable();
+        $this->patchJson('/api/v1/integraciones/conexiones/banca', ['url' => $url, 'secreto' => 'secreto-compartido-123'], $this->headers($this->token($this->user('gerente', 'mgr-int'))))->assertForbidden();
+        $saved = $this->patchJson('/api/v1/integraciones/conexiones/banca', ['url' => $url, 'secreto' => 'secreto-compartido-123'], $this->headers())->assertOk()->json('data');
+        self::assertSame([$url, true, 'panel'], [$saved['url'], $saved['secreto_configurado'], $saved['origen']]);
+        self::assertStringNotContainsString('secreto-compartido-123', $this->getJson('/api/v1/integraciones/conexiones', $this->headers())->assertOk()->getContent());
+        self::assertStringNotContainsString('secreto-compartido-123', json_encode(iterator_to_array(DB::connection('mongodb')->getDatabase()->selectCollection('configuracion_integraciones')->find([]))));
+        Http::preventStrayRequests();
+        Http::fake(['https://banca.example.test/*' => Http::response(['ok' => true], 200)]);
+        $this->postJson('/api/v1/integraciones/conexiones/banca/probar', [], $this->headers())->assertOk()->assertJsonPath('data.conectado', true)->assertJsonPath('data.http_status', 200);
+        OutboxEvent::create(['event_id' => 'evt-panel', 'type' => 'solicitud.actualizada', 'status' => 'pendiente', 'attempts' => 0, 'payload' => ['estado' => 'emitida']]);
+        self::assertSame(1, app(OutboxService::class)->deliver());
+        Http::assertSentCount(2);
+        foreach (Http::recorded() as [$request]) {
+            $timestamp = $request->header('X-CP-Timestamp')[0];
+            self::assertSame(hash_hmac('sha256', $timestamp.'.'.$request->body(), 'secreto-compartido-123'), $request->header('X-CP-Signature')[0]);
+        }
+    }
+
+    public function test_corporate_demo_loads_two_companies_with_collaborators_and_a_payroll_ready_to_pay(): void
+    {
+        $this->postJson('/api/v1/demo/corporativo', ['contrasena' => 'corta'], $this->headers())->assertUnprocessable();
+        $result = $this->postJson('/api/v1/demo/corporativo', ['contrasena' => 'DemoCorporativa2026'], $this->headers())->assertCreated()->json('data.empresas');
+        $this->postJson('/api/v1/demo/corporativo', ['contrasena' => 'DemoCorporativa2026'], $this->headers())->assertConflict()->assertJsonPath('code', 'DEMO_EXISTS');
+        self::assertSame(2, Company::count());
+        self::assertSame(10, Collaborator::count());
+        foreach (Company::all() as $company) {
+            $positions = Collaborator::where('empresa_id', (string) $company->id)->pluck('puesto')->all();
+            self::assertCount(5, $positions);
+            self::assertLessThan(5, count(array_unique($positions)), 'At least two collaborators share a position.');
+            self::assertSame(15000000, Account::findOrFail($company->cuenta_id)->saldo_centavos);
+        }
+        $operator = User::where('email', $result[0]['operador'])->firstOrFail();
+        $approver = User::where('email', $result[0]['aprobador'])->firstOrFail();
+        self::assertTrue(Hash::check('DemoCorporativa2026', $approver->password));
+        $this->getJson('/api/v1/colaboradores', $this->headers($this->token($operator)))->assertOk()->assertJsonPath('data.total', 5);
+        $this->getJson('/api/v1/colaboradores?puesto=Vendedor', $this->headers($this->token($operator)))->assertOk()->assertJsonPath('data.total', 2);
+        $payroll = Payroll::where('estado', 'pendiente_autorizacion')->firstOrFail();
+        self::assertSame(['Vendedor', 'Vendedor'], array_column($payroll->pagos, 'puesto'));
+        $this->postJson('/api/v1/planillas/'.$payroll->id.'/autorizar', [], $this->headers($this->token($operator)))->assertForbidden();
+        $this->postJson('/api/v1/planillas/'.$payroll->id.'/autorizar', [], $this->headers($this->token($approver)))->assertOk()->assertJsonPath('data.estado', 'en_cola');
+        app(PayrollService::class)->process((string) $payroll->id);
+        self::assertSame('pagada', $payroll->refresh()->estado);
+        foreach ($payroll->pagos as $payment) {
+            self::assertSame(450000, Account::findOrFail($payment['cuenta_id'])->saldo_centavos);
+        }
+        $company = Company::where('nombre', $result[1]['empresa'])->firstOrFail();
+        $taken = Account::findOrFail(Collaborator::where('empresa_id', (string) $company->id)->first()->cuenta_id);
+        $this->postJson('/api/v1/colaboradores', ['empresa_id' => (string) $company->id, 'nombre' => 'Nuevo Piloto', 'puesto' => 'Piloto', 'salario' => '5200.00', 'cuenta_numero' => $taken->numero], $this->headers())->assertConflict()->assertJsonPath('code', 'DUPLICATE_COLLABORATOR');
+        $fresh = $this->account($this->customer('nuevo-piloto'), 0);
+        $fresh->update(['numero' => '5551234567']);
+        $this->postJson('/api/v1/colaboradores', ['empresa_id' => (string) $company->id, 'nombre' => 'Nuevo Piloto', 'puesto' => 'Piloto', 'salario' => '5200.00', 'cuenta_numero' => '5551234567'], $this->headers())->assertCreated()->assertJsonPath('data.puesto', 'Piloto');
+        $this->getJson('/api/v1/colaboradores?empresa_id='.$company->id.'&puesto=Piloto', $this->headers())->assertOk()->assertJsonPath('data.total', 3);
     }
 }

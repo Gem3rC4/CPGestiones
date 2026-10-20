@@ -9,7 +9,9 @@ use App\Http\Controllers\BankManagementController;
 use App\Http\Controllers\BankRegistrationController;
 use App\Http\Controllers\BankServiceController;
 use App\Http\Controllers\CardController;
+use App\Http\Controllers\CustomerAccessController;
 use App\Http\Controllers\CustomerAuthController;
+use App\Http\Controllers\IntegrationConnectionController;
 use App\Http\Controllers\IntegrationTokenController;
 use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\QueryController;
@@ -49,8 +51,8 @@ Route::prefix('v1')->group(function () {
         Route::post('/auth/logout', [AuthController::class, 'logout']);
         Route::get('/dashboard', [QueryController::class, 'dashboard'])->middleware('permit:dashboard.read');
         Route::get('/usuarios-corporativos', fn () => response()->json(['ok' => true, 'data' => User::where('active', true)->whereIn('role', ['empresa_operador', 'empresa_aprobador'])->get(['id', 'name', 'role'])]))->middleware('permit:empresas.write');
-        foreach (['usuarios', 'clientes', 'productos', 'cuentas', 'solicitudes', 'tarjetas', 'creditos', 'empresas', 'planillas', 'bitacora', 'seguridad'] as $resource) {
-            Route::get('/'.$resource, [QueryController::class, 'index'])->defaults('resource', $resource)->middleware('permit:'.($resource === 'creditos' ? 'solicitudes' : $resource).'.read');
+        foreach (['usuarios', 'clientes', 'productos', 'cuentas', 'solicitudes', 'tarjetas', 'creditos', 'empresas', 'planillas', 'bitacora', 'seguridad', 'movimientos', 'colaboradores'] as $resource) {
+            Route::get('/'.$resource, [QueryController::class, 'index'])->defaults('resource', $resource)->middleware('permit:'.(['creditos' => 'solicitudes', 'movimientos' => 'cuentas', 'colaboradores' => 'empresas'][$resource] ?? $resource).'.read');
         }
         $post = function ($uri, $controller, $method, $name, $permit) {
             Route::post($uri, [$controller, $method])->name($name)->middleware('permit:'.$permit);
@@ -74,10 +76,18 @@ Route::prefix('v1')->group(function () {
         Route::get('/tarjetas/{id}/estados-cuenta', [CardController::class, 'statements'])->middleware('permit:tarjetas.read');
         $post('/empresas', PayrollController::class, 'company', 'empresas.store', 'empresas.write');
         $post('/planillas', PayrollController::class, 'store', 'planillas.store', 'planillas.write');
+        $post('/colaboradores', PayrollController::class, 'collaborator', 'colaboradores.store', 'empresas.write');
+        $post('/demo/corporativo', PayrollController::class, 'demo', 'demo.corporativo', 'usuarios.write');
+        Route::get('/clientes/{id}/acceso', [CustomerAccessController::class, 'show'])->middleware('permit:clientes.read')->where('id', '[a-f0-9]{24}');
+        Route::patch('/clientes/{id}/acceso', [CustomerAccessController::class, 'update'])->name('clientes.acceso')->middleware('permit:clientes.manage')->where('id', '[a-f0-9]{24}');
+        $post('/clientes/{id}/sesiones/cerrar', CustomerAccessController::class, 'closeSessions', 'clientes.sesiones', 'clientes.manage');
         $post('/planillas/{id}/autorizar', PayrollController::class, 'approve', 'planillas.approve', 'planillas.approve');
         Route::get('/riesgos/pendientes', [QueryController::class, 'riskPending'])->middleware('permit:riesgos.read');
         Route::get('/integraciones', [QueryController::class, 'integrations'])->middleware('permit:integraciones.read');
         Route::get('/integraciones/tokens', [IntegrationTokenController::class, 'index'])->middleware('permit:integraciones.write');
+        Route::get('/integraciones/conexiones', [IntegrationConnectionController::class, 'index'])->middleware('permit:integraciones.write');
+        Route::patch('/integraciones/conexiones/{system}', [IntegrationConnectionController::class, 'update'])->middleware('permit:integraciones.write');
+        Route::post('/integraciones/conexiones/{system}/probar', [IntegrationConnectionController::class, 'test'])->middleware(['permit:integraciones.write', 'throttle:10,1']);
         Route::post('/integraciones/tokens', [IntegrationTokenController::class, 'store'])->middleware(['permit:integraciones.write', 'throttle:10,1']);
         Route::post('/integraciones/tokens/{id}/revocar', [IntegrationTokenController::class, 'revoke'])->middleware('permit:integraciones.write')->where('id', '[a-f0-9]{24}');
     });

@@ -39,7 +39,7 @@ class BankApplicationService
             $this->profiles->assertSeniority($customer->fecha_nacimiento, (int) $customer->antiguedad_laboral_meses);
         }
 
-        $request = ['cliente_id' => (string) $customer->id, 'producto' => $product->code];
+        $request = ['cliente_id' => (string) $customer->id, 'producto' => $product->code, 'origen' => 'banca_virtual'] + (isset($data['gestion_ref']) ? ['gestion_ref' => $data['gestion_ref']] : []);
         if ($product->type === 'debito') {
             $request['cuenta_id'] = $this->debitAccount($customer->id, $data['cuenta_id'] ?? null);
         } else {
@@ -62,8 +62,8 @@ class BankApplicationService
         $created = $this->applications->create($request, $actor, preEvaluated: true);
         $application = CardApplication::findOrFail($created['id']);
         $profile = $this->profiles->profile($customer);
-        $application->update(['origen' => 'banca_virtual', 'solicitante' => array_intersect_key($profile, array_flip(['nombre_completo', 'correo_electronico', 'dpi_enmascarado', 'nit', 'telefono', 'fecha_nacimiento', 'tipo_empleo', 'ingresos_mensuales_q', 'antiguedad_laboral_meses']))]
-            + (isset($data['gestion_ref']) ? ['gestion_ref' => $data['gestion_ref']] : [])
+        $application->update(['solicitante' => array_intersect_key($profile, array_flip(['nombre_completo', 'correo_electronico', 'dpi_enmascarado', 'nit', 'telefono', 'fecha_nacimiento', 'tipo_empleo', 'ingresos_mensuales_q', 'antiguedad_laboral_meses']))]
+
             // Optional maximum approved by CP Analítica, informed by Banca: caps the limit the operator can assign.
             + (isset($data['monto_aprobado']) && $product->type !== 'debito' ? ['limite_aprobado_centavos' => Money::cents($data['monto_aprobado']), 'decision' => ['referencia' => $data['evaluacion_ref'] ?? 'banca-virtual', 'resultado' => 'aprobada', 'motivo' => 'Evaluación aprobada por CP Analítica e informada por Banca Virtual.', 'received_at' => now()->toIso8601String()]] : []));
         app(AlertService::class)->publish('gestion.recibida:'.$application->id, 'solicitudes.read', 'Gestión por aprobar', $customer->nombre.' aceptó '.$product->name.' en Banca Virtual. Revisa y apruébala.', 'solicitudes', (string) $application->id);

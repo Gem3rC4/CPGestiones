@@ -34,7 +34,11 @@ class OperationRequest extends FormRequest
             'tarjetas.pay' => ['monto' => $money, 'origen_id' => $id] + $scope,
             'tarjetas.state' => ['estado' => 'required|in:activa,bloqueada', 'nota' => 'required|string|min:5|max:500'] + $scope,
             'empresas.store' => ['nombre' => 'required|string|max:150', 'nit' => 'required|string|max:20', 'cuenta_id' => $id, 'miembros' => 'required|array|min:2|max:20', 'miembros.*' => $id],
-            'planillas.store' => ['empresa_id' => $id, 'nombre' => 'required|string|max:120', 'pagos' => 'required|array|min:1|max:500', 'pagos.*.cuenta_id' => 'sometimes|string|regex:/^[a-f0-9]{24}$/D', 'pagos.*.cuenta_numero' => 'required_without:pagos.*.cuenta_id|string|max:30', 'pagos.*.nombre' => 'required|string|max:150', 'pagos.*.monto' => $money],
+            'planillas.store' => ['empresa_id' => $id, 'nombre' => 'required|string|max:120', 'pagos' => 'required|array|min:1|max:500', 'pagos.*.cuenta_id' => 'sometimes|string|regex:/^[a-f0-9]{24}$/D', 'pagos.*.cuenta_numero' => 'required_without:pagos.*.cuenta_id|string|max:30', 'pagos.*.nombre' => 'required|string|max:150', 'pagos.*.monto' => $money, 'pagos.*.puesto' => 'sometimes|string|max:80', 'pagos.*.colaborador_id' => 'sometimes|string|regex:/^[a-f0-9]{24}$/D'],
+            'colaboradores.store' => ['empresa_id' => $id, 'nombre' => 'required|string|max:150', 'puesto' => 'required|string|max:80', 'salario' => $money, 'cuenta_numero' => 'required|string|regex:/^[0-9]{10}$/D'],
+            'demo.corporativo' => ['contrasena' => 'required|string|min:12|max:72|regex:/[A-Z]/|regex:/[a-z]/|regex:/[0-9]/'],
+            'clientes.acceso' => ['activo' => 'required|boolean', 'nota' => 'required|string|min:5|max:500'],
+            'clientes.sesiones' => [],
             'planillas.approve' => [],
             default => [],
         };

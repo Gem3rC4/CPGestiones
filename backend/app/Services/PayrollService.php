@@ -44,7 +44,8 @@ class PayrollService
             if ($total > Money::MAX) {
                 throw new BusinessException('La planilla supera el importe máximo.', 'INVALID_AMOUNT', 422);
             }
-            $rows[] = ['cuenta_id' => (string) $target->id, 'nombre' => $p['nombre'], 'centavos' => $c];
+            $rows[] = ['cuenta_id' => (string) $target->id, 'cuenta_numero' => $target->numero, 'nombre' => $p['nombre'], 'centavos' => $c]
+                + array_filter(['puesto' => $p['puesto'] ?? null, 'colaborador_id' => $p['colaborador_id'] ?? null]);
         }
         $payroll = Payroll::create(['empresa_id' => $d['empresa_id'], 'nombre' => $d['nombre'], 'cuenta_id' => (string) $source->id, 'pagos' => $rows, 'total_centavos' => $total, 'creado_por' => $actor, 'estado' => 'pendiente_autorizacion']);
         app(SecurityService::class)->record('planilla_cargada', $actor, ['planilla_id' => (string) $payroll->id]);

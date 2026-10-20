@@ -8,7 +8,7 @@ import OperationModal from './components/OperationModal.vue'
 import DetailDrawer from './components/DetailDrawer.vue'
 import StatusBadge from './components/StatusBadge.vue'
 import NotificationBell from './components/NotificationBell.vue'
-import { api, get, setToken, message, label, date, identifier } from './services/api'
+import { api, get, setToken, hasToken, message, label, date, identifier } from './services/api'
 import { formSpec } from './services/forms'
 const session=ref(null), expired=ref(false), module=ref('dashboard'), sidebar=ref(false), busy=ref(false), error=ref(''), toast=ref(''), updated=ref(null)
 const dashboard=ref(null), rows=ref([]), pagination=ref(null), page=ref(1), state=ref(''), integrations=ref(null), spec=ref(null), detail=ref(null)
@@ -36,7 +36,26 @@ const current=computed(()=>nav.find(n=>n.key===module.value))
 const navGroups=computed(()=>[...new Set(allowed.value.map(n=>n.group))])
 const initials=computed(()=>session.value?.user?.name?.split(' ').slice(0,2).map(x=>x[0]).join('') || 'CP')
 function clearData() { generation++; dashboard.value=null;rows.value=[];pagination.value=null;integrations.value=null;updated.value=null;error.value='';lookupError.value='';for(const key of Object.keys(lookups)) lookups[key]=[] }
-async function authenticated(data) { clearData(); session.value=data; expired.value=false; module.value=allowed.value[0]?.key || 'planillas'; await loadLookups(); await load() }
+const isLocalHost=['localhost','127.0.0.1'].includes(window.location.hostname)
+const MODULE_KEY='cp-gestiones.module'
+const remembered=()=>{ try { return sessionStorage.getItem(MODULE_KEY) } catch { return null } }
+watch(module, value=>{ try { sessionStorage.setItem(MODULE_KEY, value) } catch {} })
+async function authenticated(data, preferred=null) { clearData(); session.value=data; expired.value=false; module.value=allowed.value.some(n=>n.key===preferred) ? preferred : (allowed.value[0]?.key || 'planillas'); await loadLookups(); await load() }
+// A reload keeps the tab's token: validate it with the API before showing the portal again.
+const restoring=ref(hasToken()), restoreError=ref('')
+async function restoreSession() {
+ restoreError.value=''
+ try {
+  const me=(await api.get('/auth/me', { timeout: 70000 })).data.data
+  if(!me.user) { setToken(null); restoring.value=false; return }
+  restoring.value=false
+  await authenticated({ user: me.user, permissions: me.permissions || [] }, remembered())
+ } catch(e) {
+  if(e.response?.status===401) { restoring.value=false; return }
+  restoreError.value=message(e)
+ }
+}
+function abandonRestore() { setToken(null); restoring.value=false; restoreError.value='' }
 async function loadLookups() {
   const owner=session.value
   lookupError.value=''
@@ -83,12 +102,12 @@ function open(item) { detail.value={module:module.value==='dashboard'?'solicitud
 async function saved() { spec.value=null;toast.value='La operación se guardó correctamente.';clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.value='',5000);await refresh() }
 async function logout() { try {await api.post('/auth/logout')} catch {} finally {session.value=null;setToken(null);detail.value=null;spec.value=null;clearData()} }
 function sessionExpired(){session.value=null;expired.value=true;detail.value=null;spec.value=null;clearData()}
-onMounted(()=>window.addEventListener('session-expired',sessionExpired))
+onMounted(()=>{ window.addEventListener('session-expired',sessionExpired); if(restoring.value) restoreSession() })
 onUnmounted(()=>{window.removeEventListener('session-expired',sessionExpired);clearTimeout(toastTimer)})
 </script>
-<template><LoginView v-if="!session" :expired="expired" @authenticated="authenticated"/><div v-else class="app-shell">
+<template><main v-if="restoring" class="restore-screen" aria-live="polite"><span class="brand-symbol">CP<span>✓</span></span><template v-if="!restoreError"><RefreshCw :size="18" class="spinning"/><p>Restableciendo tu sesión…</p><small>Si el servidor estaba inactivo puede tardar hasta un minuto.</small></template><template v-else><div class="error-box" role="alert">{{ restoreError }}</div><div class="restore-actions"><button class="primary" @click="restoreSession">Reintentar</button><button class="secondary" @click="abandonRestore">Ingresar de nuevo</button></div></template></main><LoginView v-else-if="!session" :expired="expired" @authenticated="authenticated"/><div v-else class="app-shell">
  <button v-if="sidebar" class="sidebar-backdrop" aria-label="Cerrar menú" @click="sidebar=false"></button>
- <aside class="sidebar" :class="{shown:sidebar}"><a class="brand" href="#" @click.prevent="navigate(allowed[0].key)"><span class="brand-symbol">CP<span>✓</span></span><span>CP GESTIONES<small>PORTAL DE OPERACIONES</small></span></a><div class="workspace-label"><span class="workspace-icon"><Building2 :size="17"/></span><span>CreditPulse<small>Banca y operaciones</small></span><span class="environment-pill">LOCAL</span></div><nav aria-label="Navegación principal"><div v-for="group in navGroups" :key="group" class="nav-group"><p>{{ group }}</p><button v-for="item in allowed.filter(n=>n.group===group)" :key="item.key" :class="{active:module===item.key}" :aria-current="module===item.key?'page':undefined" @click="navigate(item.key)"><component :is="item.icon" :size="18"/><span>{{ item.name }}</span><span v-if="item.key==='solicitudes' && dashboard?.pendientes" class="nav-count">{{ dashboard.pendientes }}</span></button></div></nav><div class="sidebar-footer"><ShieldCheck :size="18"/><span>Operación con trazabilidad<small>Proyecto universitario</small></span></div></aside>
+ <aside class="sidebar" :class="{shown:sidebar}"><a class="brand" href="#" @click.prevent="navigate(allowed[0].key)"><span class="brand-symbol">CP<span>✓</span></span><span>CP GESTIONES<small>PORTAL DE OPERACIONES</small></span></a><div class="workspace-label"><span class="workspace-icon"><Building2 :size="17"/></span><span>CreditPulse<small>Banca y operaciones</small></span><span class="environment-pill">{{ isLocalHost ? 'LOCAL' : 'EN LÍNEA' }}</span></div><nav aria-label="Navegación principal"><div v-for="group in navGroups" :key="group" class="nav-group"><p>{{ group }}</p><button v-for="item in allowed.filter(n=>n.group===group)" :key="item.key" :class="{active:module===item.key}" :aria-current="module===item.key?'page':undefined" @click="navigate(item.key)"><component :is="item.icon" :size="18"/><span>{{ item.name }}</span><span v-if="item.key==='solicitudes' && dashboard?.pendientes" class="nav-count">{{ dashboard.pendientes }}</span></button></div></nav><div class="sidebar-footer"><ShieldCheck :size="18"/><span>Operación con trazabilidad<small>Proyecto universitario</small></span></div></aside>
  <div class="main-shell"><header class="topbar"><div class="breadcrumb"><button class="icon-button menu-toggle" aria-label="Abrir menú" @click="sidebar=true"><Menu :size="22"/></button><span>Portal de operaciones</span><span class="breadcrumb-slash">/</span><b>{{ current?.name }}</b></div><div class="topbar-right"><NotificationBell v-if="can('clientes.read') || can('cuentas.read') || can('solicitudes.read')" :key="identifier(session.user)" @open="openAlert" @received="refresh"/><span class="connection-status"><span class="live-dot"></span>Sesión activa</span><span class="topbar-divider"></span><span class="user-avatar">{{ initials }}</span><span class="user-info"><b>{{ session.user.name }}</b><small>{{ label(session.user.role) }}</small></span><button class="icon-button" aria-label="Cerrar sesión" title="Cerrar sesión" @click="logout"><LogOut :size="19"/></button></div></header>
  <main class="content"><div class="page-topline"><p><span class="live-dot"></span> CONTROL OPERATIVO</p><button class="refresh-button" :disabled="busy" @click="refresh"><RefreshCw :size="14" :class="{spinning:busy}"/>{{ busy ? 'Actualizando…' : 'Actualizar' }}</button></div><div v-if="error || lookupError" class="error-box" role="alert">{{ error || lookupError }}<button class="text-button" @click="refresh">Reintentar</button></div><div v-if="busy" class="loading-line" aria-label="Cargando"></div>
  <DashboardView v-if="module==='dashboard'" :data="dashboard" :clients="lookups.clientes" :can="can" @navigate="navigate" @action="action" @open="open"/>

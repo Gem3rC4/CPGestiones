@@ -1,15 +1,23 @@
 import axios from 'axios'
-let token = null
+// sessionStorage survives a page reload but is cleared when the tab closes.
+const TOKEN_KEY = 'cp-gestiones.token'
+const storage = {
+  get: () => { try { return sessionStorage.getItem(TOKEN_KEY) } catch { return null } },
+  set: value => { try { value ? sessionStorage.setItem(TOKEN_KEY, value) : sessionStorage.removeItem(TOKEN_KEY) } catch {} },
+}
+let token = storage.get()
 export const api = axios.create({ baseURL: import.meta.env.VITE_API_URL || '/api/v1', timeout: 20000, headers: { Accept: 'application/json' } })
 api.interceptors.request.use(config => { if (token) config.headers.Authorization = `Bearer ${token}`; return config })
 api.interceptors.response.use(r => r, error => {
   if (error.response?.status === 401 && !error.config.url.includes('/login')) {
     token = null
+    storage.set(null)
     window.dispatchEvent(new Event('session-expired'))
   }
   return Promise.reject(error)
 })
-export const setToken = value => { token = value }
+export const setToken = value => { token = value; storage.set(value) }
+export const hasToken = () => Boolean(token)
 export const get = async (path, params = {}) => (await api.get(path, { params })).data.data
 export const mutate = async (method, path, body, key) => (await api.request({ method, url: path, data: body, headers: { 'Idempotency-Key': key } })).data.data
 export const message = error => {

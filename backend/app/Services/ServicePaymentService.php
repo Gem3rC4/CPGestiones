@@ -29,7 +29,7 @@ class ServicePaymentService
     // The controller's IdempotencyService holds the transaction: debit, settlement and receipt commit together.
     public function pay(array $data, string $actor): array
     {
-        $customer = $this->customers->byReference($data['cliente_ref']);
+        $customer = $this->customers->resolve($data);
         $source = Account::findOrFail($data['origen_id']);
         if ($source->cliente_id !== (string) $customer->id || $source->system_key) {
             throw new BusinessException('La cuenta no pertenece al cliente autenticado.', 'FORBIDDEN', 403);
@@ -52,9 +52,9 @@ class ServicePaymentService
         return $this->view($payment) + ['saldo_disponible' => Money::format((int) $source->refresh()->saldo_centavos)];
     }
 
-    public function history(string $reference, int $page): LengthAwarePaginator
+    public function history(array $identity, int $page): LengthAwarePaginator
     {
-        $customer = $this->customers->byReference($reference);
+        $customer = $this->customers->resolve($identity);
         $payments = ServicePayment::where('cliente_id', (string) $customer->id)->orderBy('created_at', 'desc')->paginate(25, ['*'], 'page', $page);
         $payments->setCollection($payments->getCollection()->map(fn (ServicePayment $payment): array => $this->view($payment)));
 

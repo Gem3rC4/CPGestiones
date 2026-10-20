@@ -6,9 +6,20 @@ use Illuminate\Validation\Validator;
 
 class BankCustomerRequest extends OperationRequest
 {
+    /**
+     * The customer is identified by DPI; cliente_ref is still accepted from earlier integrations.
+     */
+    public static function identityRules(): array
+    {
+        return [
+            'dpi' => ['required_without:cliente_ref', 'string', 'regex:/^[0-9]{13}$/D'],
+            'cliente_ref' => ['required_without:dpi', 'string', 'max:100', 'regex:/^[A-Za-z0-9][A-Za-z0-9_.:@-]*$/D'],
+        ];
+    }
+
     public function rules(): array
     {
-        return ['cliente_ref' => ['required', 'string', 'max:100', 'regex:/^[A-Za-z0-9][A-Za-z0-9_.:@-]*$/D']];
+        return self::identityRules();
     }
 
     public function after(): array
@@ -27,6 +38,9 @@ class BankCustomerRequest extends OperationRequest
     public function messages(): array
     {
         return parent::messages() + [
+            'dpi.required_without' => 'Indica el DPI del cliente (13 dígitos).',
+            'dpi.regex' => 'El DPI debe tener 13 dígitos, sin espacios ni guiones.',
+            'cliente_ref.required_without' => 'Indica el DPI del cliente (13 dígitos).',
             'string' => 'Este campo debe ser texto.',
             'integer' => 'Este campo debe ser un número entero.',
             'max' => 'El valor excede el máximo permitido (:max).',

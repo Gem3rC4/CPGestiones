@@ -12,7 +12,13 @@ class Customer extends Document
 
     protected $casts = ['locked_until' => 'datetime'];
 
-    protected $appends = ['dpi_enmascarado'];
+    protected $appends = ['dpi_enmascarado', 'acceso_app'];
+
+    // True once the person created (or linked) their Banca Virtual profile; the hash itself stays hidden.
+    public function getAccesoAppAttribute(): bool
+    {
+        return ! empty($this->attributes['password']);
+    }
 
     public static function fingerprint(string $dpi): string
     {

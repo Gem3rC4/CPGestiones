@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "CP Gestiones API",
-    "version": "1.2.0",
-    "description": "Contrato de Gestiones con autenticación central de clientes, recepción de trámites aceptados, límites manuales acotados por Analítica y alertas. Los otros sistemas aún deben integrar este contrato."
+    "version": "2.0.0",
+    "description": "Contrato de CP Gestiones. Versión 2: Banca Virtual identifica al cliente por DPI (dpi, 13 dígitos) en consultas y escrituras; cliente_ref se acepta solo por compatibilidad. El registro crea únicamente el perfil de acceso; las cuentas se abren con POST /banca/cuentas y las gestiones se solicitan con POST /banca/solicitudes. Guía: docs/GUIA-BANCA-VIRTUAL.md."
   },
   "servers": [
     {
@@ -1150,15 +1150,26 @@
         },
         "parameters": [
           {
+            "name": "dpi",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{13}$"
+            },
+            "description": "DPI del cliente (obligatorio para el token de Banca)"
+          },
+          {
             "in": "query",
             "name": "cliente_ref",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string",
               "maxLength": 100,
               "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@-]*$",
               "description": "Referencia estable asignada por el servidor de Banca Virtual. Nunca confiar en la referencia elegida por el navegador."
-            }
+            },
+            "deprecated": true
           }
         ]
       }
@@ -1284,7 +1295,7 @@
           "banca"
         ],
         "summary": "Registrar cliente y abrir ahorro",
-        "description": "Registrar cliente y abrir ahorro; exclusivo del token banca, requiere clientes.write y cuentas.write. Ver REGISTRO-BANCA.md. Límite compartido de 180 peticiones/minuto por integración.",
+        "description": "Crea solo el perfil de acceso (sin cuentas). Si el DPI ya existe en el banco sin acceso a la app y el correo y la fecha de nacimiento coinciden, lo vincula (vinculado: true); si no coinciden, 409 CUSTOMER_LINK_REJECTED.",
         "responses": {
           "201": {
             "description": "Operación completada; un reintento idéntico devuelve el resultado almacenado.",
@@ -1380,17 +1391,12 @@
                 "$ref": "#/components/schemas/BankRegistration"
               },
               "example": {
-                "cliente_ref": "banca-juan-001",
-                "nombre": "Juan",
-                "apellido": "Pérez",
-                "correo_electronico": "juan.perez@ejemplo.com",
-                "dpi": "1234567890123",
-                "nit": "1234567-8",
-                "fecha_nacimiento": "25/10/1990",
-                "tipo_empleo": "Asalariado",
-                "ingresos_mensuales_q": 5000,
-                "antiguedad_laboral_meses": 24,
-                "contrasena": "EjemploSeguro123!"
+                "nombre": "Fernando",
+                "apellido": "Fajardo",
+                "correo_electronico": "ferfajardo@creditpulse.com",
+                "contrasena": "MiClave2026",
+                "dpi": "3068226670601",
+                "fecha_nacimiento": "12/06/2003"
               }
             }
           }
@@ -1489,15 +1495,26 @@
         },
         "parameters": [
           {
+            "name": "dpi",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{13}$"
+            },
+            "description": "DPI del cliente (obligatorio para el token de Banca)"
+          },
+          {
             "in": "query",
             "name": "cliente_ref",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string",
               "maxLength": 100,
               "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@-]*$",
               "description": "Referencia estable asignada por el servidor de Banca Virtual. Nunca confiar en la referencia elegida por el navegador."
-            }
+            },
+            "deprecated": true
           }
         ]
       }
@@ -1868,13 +1885,25 @@
             }
           },
           {
+            "name": "dpi",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{13}$"
+            },
+            "description": "DPI del cliente (obligatorio para el token de Banca)"
+          },
+          {
             "in": "query",
             "name": "cliente_ref",
             "schema": {
               "type": "string",
               "maxLength": 100,
               "description": "Obligatorio para el token de Banca Virtual. El servidor de banca lo obtiene de la identidad autenticada, nunca de un valor confiado al navegador."
-            }
+            },
+            "required": false,
+            "deprecated": true
           }
         ]
       },
@@ -2086,12 +2115,24 @@
         },
         "parameters": [
           {
+            "name": "dpi",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{13}$"
+            },
+            "description": "DPI del cliente (obligatorio para el token de Banca)"
+          },
+          {
             "in": "query",
             "name": "cliente_ref",
             "schema": {
               "type": "string",
               "maxLength": 100
-            }
+            },
+            "required": false,
+            "deprecated": true
           },
           {
             "in": "query",
@@ -2250,13 +2291,25 @@
             }
           },
           {
+            "name": "dpi",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{13}$"
+            },
+            "description": "DPI del cliente (obligatorio para el token de Banca)"
+          },
+          {
             "in": "query",
             "name": "cliente_ref",
             "schema": {
               "type": "string",
               "maxLength": 100,
               "description": "Obligatorio para el token de Banca Virtual. El servidor de banca lo obtiene de la identidad autenticada, nunca de un valor confiado al navegador."
-            }
+            },
+            "required": false,
+            "deprecated": true
           },
           {
             "in": "query",
@@ -2626,13 +2679,25 @@
             }
           },
           {
+            "name": "dpi",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{13}$"
+            },
+            "description": "DPI del cliente (obligatorio para el token de Banca)"
+          },
+          {
             "in": "query",
             "name": "cliente_ref",
             "schema": {
               "type": "string",
               "maxLength": 100,
               "description": "Obligatorio para el token de Banca Virtual. El servidor de banca lo obtiene de la identidad autenticada, nunca de un valor confiado al navegador."
-            }
+            },
+            "required": false,
+            "deprecated": true
           }
         ]
       }
@@ -4267,13 +4332,25 @@
             }
           },
           {
+            "name": "dpi",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{13}$"
+            },
+            "description": "DPI del cliente (obligatorio para el token de Banca)"
+          },
+          {
             "in": "query",
             "name": "cliente_ref",
             "schema": {
               "type": "string",
               "maxLength": 100,
               "description": "Obligatorio para el token de Banca Virtual. El servidor de banca lo obtiene de la identidad autenticada, nunca de un valor confiado al navegador."
-            }
+            },
+            "required": false,
+            "deprecated": true
           },
           {
             "in": "query",
@@ -4503,13 +4580,25 @@
             }
           },
           {
+            "name": "dpi",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{13}$"
+            },
+            "description": "DPI del cliente (obligatorio para el token de Banca)"
+          },
+          {
             "in": "query",
             "name": "cliente_ref",
             "schema": {
               "type": "string",
               "maxLength": 100,
               "description": "Obligatorio para el token de Banca Virtual. El servidor de banca lo obtiene de la identidad autenticada, nunca de un valor confiado al navegador."
-            }
+            },
+            "required": false,
+            "deprecated": true
           }
         ]
       }
@@ -4879,13 +4968,25 @@
             }
           },
           {
+            "name": "dpi",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{13}$"
+            },
+            "description": "DPI del cliente (obligatorio para el token de Banca)"
+          },
+          {
             "in": "query",
             "name": "cliente_ref",
             "schema": {
               "type": "string",
               "maxLength": 100,
               "description": "Obligatorio para el token de Banca Virtual. El servidor de banca lo obtiene de la identidad autenticada, nunca de un valor confiado al navegador."
-            }
+            },
+            "required": false,
+            "deprecated": true
           },
           {
             "in": "query",
@@ -5264,13 +5365,25 @@
             }
           },
           {
+            "name": "dpi",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{13}$"
+            },
+            "description": "DPI del cliente (obligatorio para el token de Banca)"
+          },
+          {
             "in": "query",
             "name": "cliente_ref",
             "schema": {
               "type": "string",
               "maxLength": 100,
               "description": "Obligatorio para el token de Banca Virtual. El servidor de banca lo obtiene de la identidad autenticada, nunca de un valor confiado al navegador."
-            }
+            },
+            "required": false,
+            "deprecated": true
           }
         ]
       }
@@ -6192,13 +6305,24 @@
         "description": "Paginado de 25, más recientes primero.",
         "parameters": [
           {
+            "name": "dpi",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{13}$"
+            },
+            "description": "DPI del cliente (obligatorio para el token de Banca)"
+          },
+          {
             "name": "cliente_ref",
             "in": "query",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string",
               "maxLength": 100
-            }
+            },
+            "deprecated": true
           },
           {
             "name": "page",
@@ -6383,13 +6507,24 @@
         "description": "Devuelve número formateado, tipo, titular abreviado (\"María L.\") y si es propia. Nunca saldos.",
         "parameters": [
           {
+            "name": "dpi",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{13}$"
+            },
+            "description": "DPI del cliente (obligatorio para el token de Banca)"
+          },
+          {
             "name": "cliente_ref",
             "in": "query",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string",
               "maxLength": 100
-            }
+            },
+            "deprecated": true
           },
           {
             "name": "numero",
@@ -6483,8 +6618,9 @@
                   },
                   "contrasena_nueva": {
                     "type": "string",
-                    "minLength": 12,
-                    "maxLength": 72
+                    "minLength": 8,
+                    "maxLength": 72,
+                    "description": "Al menos una letra y un número"
                   }
                 }
               }
@@ -6660,6 +6796,377 @@
           },
           "404": {
             "description": "Sesión no encontrada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/banca/cuentas": {
+      "post": {
+        "operationId": "post_banca_cuentas",
+        "tags": [
+          "banca"
+        ],
+        "summary": "Abrir una cuenta del cliente",
+        "description": "Apartado Cuentas de la app. Abre con Q0.00 y genera alerta.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 120
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "dpi",
+                  "producto"
+                ],
+                "properties": {
+                  "dpi": {
+                    "type": "string",
+                    "pattern": "^[0-9]{13}$",
+                    "description": "DPI del cliente; llave de vinculación"
+                  },
+                  "producto": {
+                    "type": "string",
+                    "enum": [
+                      "ahorro",
+                      "monetaria"
+                    ]
+                  },
+                  "nombre": {
+                    "type": "string",
+                    "maxLength": 60
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Cuenta abierta",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Success"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token de integración inválido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Requiere el token de Banca Virtual",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "CUSTOMER_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "PRODUCT_UNAVAILABLE",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Datos inválidos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/banca/solicitudes": {
+      "post": {
+        "operationId": "post_banca_solicitudes",
+        "tags": [
+          "banca"
+        ],
+        "summary": "Solicitar una gestión (único origen de gestiones)",
+        "description": "Cae de inmediato en el buzón de Gestiones (en_evaluacion para créditos, aprobada para débito) y completa el perfil con los datos detallados. 422 lista los datos faltantes.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 120
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "dpi",
+                  "producto"
+                ],
+                "properties": {
+                  "dpi": {
+                    "type": "string",
+                    "pattern": "^[0-9]{13}$",
+                    "description": "DPI del cliente; llave de vinculación"
+                  },
+                  "producto": {
+                    "type": "string"
+                  },
+                  "monto_solicitado": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  },
+                  "cuenta_id": {
+                    "$ref": "#/components/schemas/ObjectId"
+                  },
+                  "gestion_ref": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "nit": {
+                    "type": "string"
+                  },
+                  "telefono": {
+                    "type": "string"
+                  },
+                  "tipo_empleo": {
+                    "type": "string",
+                    "enum": [
+                      "Asalariado",
+                      "Independiente"
+                    ]
+                  },
+                  "ingresos_mensuales_q": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  },
+                  "antiguedad_laboral_meses": {
+                    "type": "integer"
+                  },
+                  "fecha_nacimiento": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Gestión recibida",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Success"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token de integración inválido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Requiere el token de Banca Virtual",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "CUSTOMER_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "MANAGEMENT_IN_PROGRESS",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Datos faltantes o inválidos, PRODUCT_LIMIT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/banca/auth/recuperar": {
+      "post": {
+        "operationId": "post_banca_auth_recuperar",
+        "tags": [
+          "banca"
+        ],
+        "summary": "Olvidé mi contraseña (sin correo)",
+        "description": "Verifica DPI, correo y fecha de nacimiento; cierra todas las sesiones. Fallos cuentan para el bloqueo. Límite 5/min por DPI.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "dpi",
+                  "correo_electronico",
+                  "fecha_nacimiento",
+                  "contrasena_nueva"
+                ],
+                "properties": {
+                  "dpi": {
+                    "type": "string",
+                    "pattern": "^[0-9]{13}$",
+                    "description": "DPI del cliente; llave de vinculación"
+                  },
+                  "correo_electronico": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "fecha_nacimiento": {
+                    "type": "string"
+                  },
+                  "contrasena_nueva": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 72,
+                    "description": "Al menos una letra y un número"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Contraseña restablecida",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Success"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token de integración inválido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Requiere el token de Banca Virtual",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "RECOVERY_REJECTED o contraseña inválida",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Demasiados intentos",
             "content": {
               "application/json": {
                 "schema": {
@@ -7366,13 +7873,16 @@
       },
       "BankRegistration": {
         "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "nombre",
+          "apellido",
+          "correo_electronico",
+          "contrasena",
+          "dpi",
+          "fecha_nacimiento"
+        ],
         "properties": {
-          "cliente_ref": {
-            "type": "string",
-            "maxLength": 100,
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@-]*$",
-            "description": "Referencia estable asignada por el servidor de Banca Virtual. Nunca confiar en la referencia elegida por el navegador."
-          },
           "nombre": {
             "type": "string",
             "maxLength": 75
@@ -7386,68 +7896,53 @@
             "format": "email",
             "maxLength": 180
           },
+          "contrasena": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 72,
+            "description": "Al menos una letra y un número"
+          },
           "dpi": {
             "type": "string",
-            "pattern": "^[0-9]{13}$"
-          },
-          "nit": {
-            "type": "string",
-            "maxLength": 20,
-            "pattern": "^[0-9]{1,12}-?[0-9Kk]$"
+            "pattern": "^[0-9]{13}$",
+            "description": "DPI del cliente; llave de vinculación"
           },
           "fecha_nacimiento": {
             "type": "string",
-            "pattern": "^(\\d{2}/\\d{2}/\\d{4}|\\d{4}-\\d{2}-\\d{2})$",
-            "description": "Fecha real dd/mm/aaaa o aaaa-mm-dd, desde 1900-01-01; al menos 18 años en America/Guatemala."
+            "description": "dd/mm/aaaa o aaaa-mm-dd; mayor de 18 años"
+          },
+          "cliente_ref": {
+            "type": "string",
+            "maxLength": 100,
+            "deprecated": true
+          },
+          "nit": {
+            "type": "string",
+            "description": "Opcional (compatibilidad)"
           },
           "tipo_empleo": {
             "type": "string",
-            "description": "Asalariado o Independiente, sin distinguir mayúsculas."
+            "enum": [
+              "Asalariado",
+              "Independiente"
+            ]
           },
           "ingresos_mensuales_q": {
             "oneOf": [
               {
-                "type": "string",
-                "pattern": "^(0|[1-9][0-9]{0,9})(\\.[0-9]{1,2})?$"
+                "type": "string"
               },
               {
-                "type": "number",
-                "minimum": 0,
-                "maximum": 1000000000,
-                "multipleOf": 0.01
+                "type": "number"
               }
-            ],
-            "description": "De 0.00 a 1000000000.00. Admite número JSON o texto, máximo 2 decimales; la respuesta siempre contiene texto decimal y centavos enteros."
+            ]
           },
           "antiguedad_laboral_meses": {
             "type": "integer",
             "minimum": 0,
-            "maximum": 1500,
-            "description": "No puede superar la edad en meses."
-          },
-          "contrasena": {
-            "type": "string",
-            "minLength": 12,
-            "maxLength": 72,
-            "writeOnly": true,
-            "description": "Mayúscula, minúscula y número; máximo 72 bytes, sin nulos. Gestiones almacena un hash bcrypt. No registrar en logs."
+            "maximum": 1500
           }
-        },
-        "required": [
-          "cliente_ref",
-          "nombre",
-          "apellido",
-          "correo_electronico",
-          "dpi",
-          "nit",
-          "fecha_nacimiento",
-          "tipo_empleo",
-          "ingresos_mensuales_q",
-          "antiguedad_laboral_meses",
-          "contrasena"
-        ],
-        "additionalProperties": false,
-        "description": "Cliente, contraseña hasheada, primera cuenta, alerta y registro de idempotencia se guardan atómicamente en Gestiones. No admite roles, saldo ni campos desconocidos."
+        }
       },
       "BankFinancialUpdate": {
         "type": "object",

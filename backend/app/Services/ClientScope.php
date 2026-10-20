@@ -3,7 +3,7 @@
 namespace App\Services;
 
 use App\Exceptions\BusinessException;
-use App\Models\Customer;
+use App\Repositories\CustomerRepository;
 
 class ClientScope
 {
@@ -12,12 +12,12 @@ class ClientScope
         if (request()->attributes->get('actor') !== 'service:banca') {
             return null;
         }
-        $ref = request()->input('cliente_ref');
-        if (! is_string($ref) || $ref === '') {
-            throw new BusinessException('El servidor de banca debe indicar cliente_ref autenticado.', 'CLIENT_SCOPE_REQUIRED', 422);
+        $identity = array_filter(request()->only(['dpi', 'cliente_ref']), 'is_string');
+        if ($identity === []) {
+            throw new BusinessException('El servidor de banca debe indicar el DPI del cliente autenticado.', 'CLIENT_SCOPE_REQUIRED', 422);
         }
 
-        return (string) Customer::where('external_ref', $ref)->firstOrFail()->id;
+        return (string) app(CustomerRepository::class)->resolve($identity)->id;
     }
 
     public function check(string $id): void

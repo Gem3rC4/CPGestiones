@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\CustomerLoginRequest;
 use App\Http\Requests\CustomerPasswordRequest;
+use App\Http\Requests\CustomerRecoveryRequest;
 use App\Models\Customer;
 use App\Services\BankRegistrationService;
 use App\Services\CustomerAuthService;
@@ -22,7 +23,7 @@ class CustomerAuthController extends ApiController
         $session = $service->session($request->header('X-Cliente-Token', ''));
         $customer = Customer::findOrFail($session->cliente_id);
 
-        return $this->ok(['cliente' => $profiles->findProfile($customer->external_ref), 'expires_at' => $session->expires_at]);
+        return $this->ok(['cliente' => $profiles->profile($customer), 'expires_at' => $session->expires_at]);
     }
 
     public function logout(Request $request, CustomerAuthService $service): JsonResponse
@@ -37,6 +38,11 @@ class CustomerAuthController extends ApiController
         $session = $service->session($request->header('X-Cliente-Token', ''));
 
         return $this->ok($service->changePassword($session, $request->validated('contrasena_actual'), $request->validated('contrasena_nueva')));
+    }
+
+    public function recover(CustomerRecoveryRequest $request, CustomerAuthService $service): JsonResponse
+    {
+        return $this->ok($service->recover($request->validated()));
     }
 
     public function sessions(Request $request, CustomerAuthService $service): JsonResponse

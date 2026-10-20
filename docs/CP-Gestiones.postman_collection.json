@@ -118,6 +118,10 @@
     {
       "key": "sesion_id",
       "value": ""
+    },
+    {
+      "key": "dpi",
+      "value": "3068226670601"
     }
   ],
   "item": [
@@ -296,7 +300,7 @@
             "description": "Registrar cliente y abrir ahorro; exclusivo del token banca, requiere clientes.write y cuentas.write. Ver REGISTRO-BANCA.md. Límite compartido de 180 peticiones/minuto por integración.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"cliente_ref\": \"{{cliente_ref}}\",\n  \"nombre\": \"Juan\",\n  \"apellido\": \"Pérez\",\n  \"correo_electronico\": \"juan.perez@ejemplo.com\",\n  \"dpi\": \"1234567890123\",\n  \"nit\": \"1234567-8\",\n  \"fecha_nacimiento\": \"25/10/1990\",\n  \"tipo_empleo\": \"Asalariado\",\n  \"ingresos_mensuales_q\": 5000.0,\n  \"antiguedad_laboral_meses\": 24,\n  \"contrasena\": \"{{customerPassword}}\"\n}",
+              "raw": "{\n  \"nombre\": \"Fernando\",\n  \"apellido\": \"Fajardo\",\n  \"correo_electronico\": \"ferfajardo@creditpulse.com\",\n  \"contrasena\": \"{{customerPassword}}\",\n  \"dpi\": \"{{dpi}}\",\n  \"fecha_nacimiento\": \"12/06/2003\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -309,7 +313,7 @@
           "name": "GET /banca/perfil",
           "request": {
             "method": "GET",
-            "url": "{{baseUrl}}/banca/perfil?cliente_ref={{cliente_ref}}",
+            "url": "{{baseUrl}}/banca/perfil?dpi={{dpi}}",
             "header": [
               {
                 "key": "Accept",
@@ -333,7 +337,7 @@
           "name": "GET /banca/resumen",
           "request": {
             "method": "GET",
-            "url": "{{baseUrl}}/banca/resumen?cliente_ref={{cliente_ref}}",
+            "url": "{{baseUrl}}/banca/resumen?dpi={{dpi}}",
             "header": [
               {
                 "key": "Accept",
@@ -385,7 +389,7 @@
             "description": "Actualizar únicamente datos financieros, exige perfil_version vigente; exclusivo del token banca, requiere clientes.write. Ver REGISTRO-BANCA.md. Límite compartido de 180 peticiones/minuto por integración.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"cliente_ref\": \"{{cliente_ref}}\",\n  \"tipo_empleo\": \"Independiente\",\n  \"ingresos_mensuales_q\": 6500.25,\n  \"antiguedad_laboral_meses\": 36,\n  \"perfil_version\": 1\n}",
+              "raw": "{\n  \"dpi\": \"{{dpi}}\",\n  \"tipo_empleo\": \"Independiente\",\n  \"ingresos_mensuales_q\": 6500.25,\n  \"antiguedad_laboral_meses\": 36,\n  \"perfil_version\": 1\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -530,7 +534,7 @@
             "description": "Recibe la oferta aceptada y abre en_tramite con alerta. Exige evaluación aprobada del mismo cliente, registrada directamente por Analítica. No acepta un máximo enviado por Banca. Solo un trámite por evaluación y uno activo por cliente/producto.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"cliente_ref\": \"{{cliente_ref}}\",\n  \"gestion_ref\": \"10030\",\n  \"evaluacion_ref\": \"eval-10030\",\n  \"referencia_aceptacion\": \"consent-10030\",\n  \"aceptada_en\": \"2026-10-07T11:30:00-06:00\"\n}",
+              "raw": "{\n  \"dpi\": \"{{dpi}}\",\n  \"gestion_ref\": \"10030\",\n  \"evaluacion_ref\": \"eval-10030\",\n  \"referencia_aceptacion\": \"consent-10030\",\n  \"aceptada_en\": \"2026-10-07T11:30:00-06:00\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -638,7 +642,7 @@
             "url": "{{baseUrl}}/banca/pagos-servicios",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"cliente_ref\": \"{{cliente_ref}}\",\n  \"origen_id\": \"{{origen_id}}\",\n  \"servicio\": \"eegsa\",\n  \"referencia_servicio\": \"NIS-1234\",\n  \"monto\": \"125.50\"\n}"
+              "raw": "{\n  \"dpi\": \"{{dpi}}\",\n  \"origen_id\": \"{{origen_id}}\",\n  \"servicio\": \"eegsa\",\n  \"referencia_servicio\": \"NIS-1234\",\n  \"monto\": \"125.50\"\n}"
             }
           }
         },
@@ -666,7 +670,7 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{baseUrl}}/banca/pagos-servicios?cliente_ref={{cliente_ref}}"
+            "url": "{{baseUrl}}/banca/pagos-servicios?dpi={{dpi}}"
           }
         },
         {
@@ -693,7 +697,7 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{baseUrl}}/banca/cuentas/destino?cliente_ref={{cliente_ref}}&numero={{cuenta_numero}}"
+            "url": "{{baseUrl}}/banca/cuentas/destino?dpi={{dpi}}&numero={{cuenta_numero}}"
           }
         },
         {
@@ -791,6 +795,107 @@
               }
             ],
             "url": "{{baseUrl}}/banca/auth/sesiones/{{sesion_id}}/revocar"
+          }
+        },
+        {
+          "name": "POST /banca/cuentas",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{bankToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/banca/cuentas",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dpi\": \"{{dpi}}\",\n  \"producto\": \"ahorro\",\n  \"nombre\": \"Mi cuenta de ahorro\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST /banca/solicitudes",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{bankToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/banca/solicitudes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dpi\": \"{{dpi}}\",\n  \"producto\": \"credito-personal\",\n  \"monto_solicitado\": \"25000.00\",\n  \"gestion_ref\": \"100040\",\n  \"nit\": \"116698640\",\n  \"telefono\": \"55513002\",\n  \"tipo_empleo\": \"Asalariado\",\n  \"ingresos_mensuales_q\": 9500,\n  \"antiguedad_laboral_meses\": 30\n}"
+            }
+          }
+        },
+        {
+          "name": "POST /banca/auth/recuperar",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{bankToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/banca/auth/recuperar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dpi\": \"{{dpi}}\",\n  \"correo_electronico\": \"ferfajardo@creditpulse.com\",\n  \"fecha_nacimiento\": \"12/06/2003\",\n  \"contrasena_nueva\": \"{{customerNewPassword}}\"\n}"
+            }
           }
         }
       ]
@@ -1304,7 +1409,7 @@
             "description": "Solo service:riesgos. Registra una evaluación inmutable previa al consentimiento. Máximo positivo y no mayor a lo solicitado; rechazo requiere cero. Repetición por evaluacion_ref con otros datos devuelve 409.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"cliente_ref\": \"{{cliente_ref}}\",\n  \"evaluacion_ref\": \"eval-10030\",\n  \"producto\": \"credito-personal\",\n  \"resultado\": \"aprobada\",\n  \"monto_solicitado\": \"10000.00\",\n  \"limite_aprobado\": \"8500.00\",\n  \"motivo\": \"Evaluación sintética aprobada\"\n}",
+              "raw": "{\n  \"dpi\": \"{{dpi}}\",\n  \"evaluacion_ref\": \"eval-10030\",\n  \"producto\": \"credito-personal\",\n  \"resultado\": \"aprobada\",\n  \"monto_solicitado\": \"10000.00\",\n  \"limite_aprobado\": \"8500.00\",\n  \"motivo\": \"Evaluación sintética aprobada\"\n}",
               "options": {
                 "raw": {
                   "language": "json"

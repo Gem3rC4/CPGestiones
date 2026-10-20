@@ -65,3 +65,13 @@ El nuevo flujo recibe una evaluación de Analítica por su token exclusivo y la 
 Los productos personales, vehiculares e hipotecarios se registran como créditos autorizados en `creditos`; no crean tarjetas. Su emisión no mueve dinero ni presume una tasa, plazo, tabla de pagos o garantía. No se implementó desembolso, cuotas, cobranza ni cálculo de intereses de préstamos. El catálogo muestra sus condiciones como pendientes, sin inventar una tasa de 0%.
 
 Las alertas se guardan en MongoDB y se consultan cada cinco segundos mientras el panel está visible. Cada empleado mantiene sus lecturas; los permisos limitan los recursos visibles. No se usa WebSocket y puede existir la demora del intervalo más la red. Los eventos entrantes son tipos acotados y autentificados; no permiten cambiar datos maestros o saldos mediante una notificación. No se guardan contraseñas ni DPI en el mensaje de alerta.
+
+## Banca Virtual: registro, cuentas y gestiones (versión 2)
+
+- El registro en la app crea solo el perfil de acceso (nombre, apellido, correo, contraseña, DPI y fecha de nacimiento). No abre cuentas.
+- El DPI es la llave que une el perfil de la app con el cliente del banco. Un cliente registrado en agencia se vincula cuando se registra en la app con el mismo DPI, correo y fecha de nacimiento (si el banco la registró) y aún no tenía acceso. Conocer un DPI no basta para tomar un perfil.
+- Las cuentas se abren desde el apartado Cuentas de la app o en agencia.
+- Las gestiones nacen únicamente en Banca Virtual y caen en el buzón desde que el cliente las envía. Ahí se piden los datos detallados (NIT, empleo, ingresos, antigüedad). El personal ya no puede crearlas.
+- Se eliminaron "Referencia en Banca Virtual" y "Cuotas mensuales de deuda" del registro asistido. Los clientes antiguos conservan su referencia y la API la sigue aceptando por compatibilidad.
+- "Olvidé mi contraseña" no usa correo, por decisión del equipo: el cliente confirma DPI, correo y fecha de nacimiento. Es menos seguro que un código por correo porque esos datos no son secretos; los intentos fallidos comparten el bloqueo del login y se limitan a 5 por minuto.
+- Las contraseñas de clientes piden 8 caracteres con letras y números, igual que las pantallas de Banca. Las del personal siguen pidiendo 12 con mayúscula, minúscula y número.

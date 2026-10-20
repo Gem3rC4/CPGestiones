@@ -15,13 +15,13 @@ class OperationRequest extends FormRequest
     {
         $id = 'required|string|regex:/^[a-f0-9]{24}$/D';
         $money = ['required', 'string', 'regex:/^(0|[1-9][0-9]{0,9})(\.[0-9]{1,2})?$/D'];
-        $scope = ['cliente_ref' => 'sometimes|string|max:100'];
+        $scope = ['cliente_ref' => 'sometimes|string|max:100', 'dpi' => 'sometimes|string|regex:/^[0-9]{13}$/D'];
 
         return match ($this->route()->getName()) {
             'auth.login' => ['email' => 'required|email|max:180', 'password' => 'required|string|max:200'],
             'usuarios.store' => ['name' => 'required|string|max:150', 'email' => 'required|email|max:180', 'password' => 'required|string|min:12|max:72|regex:/[A-Z]/|regex:/[a-z]/|regex:/[0-9]/', 'role' => 'required|in:administrador,gerente,cajero,analista,auditor,empresa_operador,empresa_aprobador'],
             'usuarios.update' => ['role' => 'required|in:administrador,gerente,cajero,analista,auditor,empresa_operador,empresa_aprobador', 'active' => 'required|boolean'],
-            'clientes.store' => ['nombre' => 'required|string|max:150', 'email' => 'required|email|max:180', 'dpi' => 'required|digits:13', 'nit' => 'required|string|max:20', 'telefono' => 'required|string|max:20', 'external_ref' => 'required|string|max:100', 'ingreso_mensual' => $money, 'deuda_mensual' => $money],
+            'clientes.store' => ['nombre' => 'required|string|max:150', 'email' => 'required|email|max:180', 'dpi' => 'required|digits:13', 'nit' => 'required|string|max:20', 'telefono' => 'required|string|max:20', 'fecha_nacimiento' => 'sometimes|nullable|date_format:Y-m-d|after_or_equal:1900-01-01|before_or_equal:today', 'ingreso_mensual' => $money],
             'productos.update' => ['name' => 'required|string|max:120', 'active' => 'required|boolean', 'annual_bps' => 'required|integer|min:0|max:6000', 'minimum_bps' => 'required|integer|min:0|max:10000', 'minimum_floor_cents' => 'required|integer|min:0|max:1000000', 'cutoff_day' => 'required|integer|min:1|max:31', 'payment_days' => 'required|integer|min:1|max:30'],
             'cuentas.store' => ['cliente_id' => $id, 'producto' => 'required|string|max:60', 'nombre' => 'sometimes|string|max:100'] + $scope,
             'cuentas.state' => ['estado' => 'required|in:activa,bloqueada', 'nota' => 'required|string|min:5|max:500'],

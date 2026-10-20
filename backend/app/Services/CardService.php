@@ -5,10 +5,10 @@ namespace App\Services;
 use App\Exceptions\BusinessException;
 use App\Models\Account;
 use App\Models\Card;
-use App\Models\Customer;
 use App\Models\DailyAccrual;
 use App\Models\Movement;
 use App\Models\Statement;
+use App\Repositories\CustomerRepository;
 use App\Support\Money;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -75,7 +75,7 @@ class CardService
     public function owner(Card $card, array $d, string $actor): void
     {
         if ($actor === 'service:banca') {
-            $customer = Customer::where('external_ref', $d['cliente_ref'] ?? '')->firstOrFail();
+            $customer = app(CustomerRepository::class)->resolve($d);
             if ($card->cliente_id !== (string) $customer->id) {
                 throw new BusinessException('La tarjeta no pertenece al cliente.', 'FORBIDDEN', 403);
             }

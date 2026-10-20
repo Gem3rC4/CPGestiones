@@ -10,7 +10,7 @@ const customer = id => props.clients.find(x => (x.id || x._id) === id)?.nombre |
 </script>
 <template>
   <div v-if="data" class="dashboard">
-    <section class="overview-intro"><div><p class="eyebrow">UNA VISTA DE TODA LA OPERACIÓN</p><h2>Todo listo para seguir avanzando.</h2><p>Consulta las solicitudes y atiende las gestiones que necesitan tu atención.</p></div><button v-if="can('solicitudes.write')" class="primary" @click="$emit('action', 'solicitudes')"><Plus :size="17"/> Nueva solicitud</button></section>
+    <section class="overview-intro"><div><p class="eyebrow">UNA VISTA DE TODA LA OPERACIÓN</p><h2>Todo listo para seguir avanzando.</h2><p>Atiende las gestiones que los clientes envían desde Banca Virtual.</p></div><span class="inbox-note">Las gestiones llegan desde Banca Virtual</span></section>
     <section class="metrics">
       <article class="metric"><div class="metric-top"><span>Solicitudes registradas</span><span class="metric-icon blue"><FileCheck2 :size="20"/></span></div><strong>{{ data.solicitudes }}</strong><small>Total de gestiones de tarjetas <ArrowUpRight :size="14"/></small></article>
       <article class="metric"><div class="metric-top"><span>En seguimiento</span><span class="metric-icon amber"><Clock3 :size="20"/></span></div><strong>{{ data.pendientes }}<span class="metric-suffix">gestiones</span></strong><small>Evaluación, revisión y emisión</small></article>

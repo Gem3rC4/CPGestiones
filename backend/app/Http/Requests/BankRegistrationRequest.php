@@ -51,27 +51,67 @@ class BankRegistrationRequest extends BankCustomerRequest
         ];
     }
 
+    /**
+     * Customer password policy, shared by registration, change and recovery.
+     * Matches what Banca Virtual shows: at least 8 characters with letters and numbers.
+     */
+    public static function passwordRules(): array
+    {
+        return ['bail', 'required', 'string', 'min:8', 'max:72', 'regex:/\p{L}/u', 'regex:/[0-9]/', function (string $attribute, mixed $value, Closure $fail): void {
+            if (strlen($value) > 72 || str_contains($value, chr(0))) {
+                $fail('Usa una contraseña de hasta 72 bytes, sin caracteres nulos.');
+            }
+        }];
+    }
+
+    public static function passwordMessages(string $field): array
+    {
+        return [$field.'.min' => 'Usa al menos 8 caracteres.', $field.'.regex' => 'Incluye al menos una letra y un número.'];
+    }
+
+    protected function birthDateRules(): array
+    {
+        return ['required', 'string', 'date_format:Y-m-d', 'after_or_equal:1900-01-01', 'before_or_equal:'.CarbonImmutable::now('America/Guatemala')->subYears(18)->toDateString()];
+    }
+
+    protected function nitRules(): array
+    {
+        return ['string', 'max:20', 'regex:/^[0-9]{1,12}-?[0-9Kk]$/D'];
+    }
+
+    /**
+     * Same financial rules, but only validated when the field is sent.
+     */
+    protected function optionalFinancialRules(): array
+    {
+        return array_map(fn (array $rules): array => array_map(fn ($rule) => $rule === 'required' ? 'sometimes' : $rule, $rules), $this->financialRules());
+    }
+
+    // Basic access profile only: the detailed data is requested with the first gestión.
+    // NIT and the financial fields stay optional so the original, longer form keeps working.
     public function rules(): array
     {
-        return parent::rules() + [
-            'contrasena' => ['bail', 'required', 'string', 'min:12', 'max:72', 'regex:/[A-Z]/', 'regex:/[a-z]/', 'regex:/[0-9]/', function (string $attribute, mixed $value, Closure $fail): void {
-                if (strlen($value) > 72 || str_contains($value, chr(0))) {
-                    $fail('Usa una contraseña de hasta 72 bytes, sin caracteres nulos.');
-                }
-            }],
+        return [
+            'dpi' => ['required', 'string', 'regex:/^[0-9]{13}$/D'],
+            'cliente_ref' => ['sometimes', 'string', 'max:100', 'regex:/^[A-Za-z0-9][A-Za-z0-9_.:@-]*$/D'],
+            'contrasena' => self::passwordRules(),
             'nombre' => ['required', 'string', 'max:75', "regex:/^[\p{L}\p{M}][\p{L}\p{M} '\x{2019}-]*$/uD"],
             'apellido' => ['required', 'string', 'max:74', "regex:/^[\p{L}\p{M}][\p{L}\p{M} '\x{2019}-]*$/uD"],
             'correo_electronico' => ['required', 'string', 'email:rfc', 'max:180'],
-            'dpi' => ['required', 'string', 'regex:/^[0-9]{13}$/D'],
-            'nit' => ['required', 'string', 'max:20', 'regex:/^[0-9]{1,12}-?[0-9Kk]$/D'],
-            'fecha_nacimiento' => ['required', 'string', 'date_format:Y-m-d', 'after_or_equal:1900-01-01', 'before_or_equal:'.CarbonImmutable::now('America/Guatemala')->subYears(18)->toDateString()],
-        ] + $this->financialRules();
+            'fecha_nacimiento' => $this->birthDateRules(),
+            'nit' => ['sometimes', ...$this->nitRules()],
+        ] + $this->optionalFinancialRules();
+    }
+
+    public function messages(): array
+    {
+        return parent::messages() + self::passwordMessages('contrasena');
     }
 
     public function after(): array
     {
         return [...parent::after(), function (Validator $validator): void {
-            if (! $validator->errors()->isEmpty()) {
+            if (! $validator->errors()->isEmpty() || ! $this->has('antiguedad_laboral_meses') || ! $this->has('fecha_nacimiento')) {
                 return;
             }
             $birth = CarbonImmutable::createFromFormat('!Y-m-d', $this->input('fecha_nacimiento'), 'America/Guatemala');

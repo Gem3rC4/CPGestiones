@@ -23,7 +23,7 @@ class BankManagementService
 
             return $previous->toArray();
         }
-        $customer = app(CustomerRepository::class)->byReference($data['cliente_ref']);
+        $customer = app(CustomerRepository::class)->resolve($data);
         $product = Product::where('code', $data['producto'])->where('active', true)->whereIn('type', ['credito', 'prestamo'])->firstOrFail();
         $requested = Money::cents($data['monto_solicitado']);
         $approved = Money::cents($data['limite_aprobado'], true);
@@ -48,7 +48,7 @@ class BankManagementService
 
             return $previous->toArray();
         }
-        $customer = app(CustomerRepository::class)->byReference($data['cliente_ref']);
+        $customer = app(CustomerRepository::class)->resolve($data);
         $assessment = RiskAssessment::where('evaluacion_ref', $data['evaluacion_ref'])->where('cliente_id', (string) $customer->id)->firstOrFail();
         if ($assessment->resultado !== 'aprobada') {
             throw new BusinessException('Se requiere una evaluación aprobada por Analítica.', 'RISK_APPROVAL_REQUIRED');

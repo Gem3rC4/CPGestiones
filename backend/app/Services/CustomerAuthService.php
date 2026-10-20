@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Exceptions\BusinessException;
 use App\Models\Customer;
 use App\Models\CustomerSession;
+use App\Repositories\CustomerRepository;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
@@ -36,7 +37,7 @@ class CustomerAuthService
             CustomerSession::create(['token_hash' => hash('sha256', $plain), 'cliente_id' => (string) $customer->id, 'expires_at' => now()->addMinutes(config('operations.token_minutes')), 'dispositivo' => $data['dispositivo'] ?? null, 'ip' => $data['ip'] ?? null, 'ultima_actividad' => now()]);
             app(SecurityService::class)->record('login_cliente', 'cliente:'.$customer->id);
 
-            return ['token_cliente' => $plain, 'expires_in' => config('operations.token_minutes') * 60, 'cliente' => app(BankRegistrationService::class)->findProfile($customer->external_ref)];
+            return ['token_cliente' => $plain, 'expires_in' => config('operations.token_minutes') * 60, 'cliente' => app(BankRegistrationService::class)->profile($customer->refresh())];
         }, attempts: 5);
         if ($result === null) {
             throw new BusinessException('Credenciales incorrectas o acceso temporalmente bloqueado.', 'INVALID_CREDENTIALS', 401);
@@ -84,6 +85,41 @@ class CustomerAuthService
         }, attempts: 5);
         if ($result === null) {
             throw ValidationException::withMessages(['contrasena_actual' => 'La contraseña actual no es correcta.']);
+        }
+
+        return $result;
+    }
+
+    /**
+     * "Olvidé mi contraseña" without e-mail (team decision): DPI, e-mail and birth date must all match an
+     * app profile. Failures share the login lockout, so the identity data cannot be guessed endlessly.
+     */
+    public function recover(array $data): array
+    {
+        $result = DB::connection('mongodb')->transaction(function () use ($data): ?array {
+            $customer = app(CustomerRepository::class)->byDpi($data['dpi']);
+            if (! $customer || ! $customer->password || ! $customer->active || $customer->locked_until?->isFuture()) {
+                Hash::check($data['contrasena_nueva'], '$2y$12$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2uheWG/igi.');
+
+                return null;
+            }
+            $matches = $customer->email && hash_equals(mb_strtolower($customer->email), $data['correo_electronico'])
+                && $customer->fecha_nacimiento && hash_equals($customer->fecha_nacimiento, $data['fecha_nacimiento']);
+            if (! $matches) {
+                $failures = ($customer->locked_until?->isPast() ? 0 : (int) $customer->failed_attempts) + 1;
+                $customer->update(['failed_attempts' => $failures, 'locked_until' => $failures >= config('operations.max_failures') ? now()->addMinutes(config('operations.lock_minutes')) : null]);
+                app(SecurityService::class)->record('recuperacion_cliente_fallida', 'cliente:'.$customer->id);
+
+                return null;
+            }
+            $customer->update(['password' => Hash::make($data['contrasena_nueva']), 'failed_attempts' => 0, 'locked_until' => null]);
+            $closed = CustomerSession::where('cliente_id', (string) $customer->id)->delete();
+            app(SecurityService::class)->record('contrasena_cliente_recuperada', 'cliente:'.$customer->id, ['sesiones_cerradas' => $closed]);
+
+            return ['contrasena_restablecida' => true, 'sesiones_cerradas' => $closed];
+        }, attempts: 5);
+        if ($result === null) {
+            throw new BusinessException('Los datos no coinciden con un cliente de Banca Virtual o el acceso está bloqueado temporalmente.', 'RECOVERY_REJECTED', 422);
         }
 
         return $result;

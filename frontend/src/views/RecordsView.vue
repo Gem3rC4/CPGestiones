@@ -9,11 +9,11 @@ const search = ref(''), state = ref('')
 watch(() => props.module, () => { search.value = ''; state.value = '' })
 const customer = id => props.clients.find(x => identifier(x) === id)?.nombre || 'Cliente registrado'
 const configurations = {
-  solicitudes: { title:'Gestiones',subtitle:'Revisa los trámites, asigna el límite aprobado y emite el producto.',create:'Nueva gestión',permission:'solicitudes.write',columns:['GESTIÓN / CLIENTE','PRODUCTO','MONTO SOLICITADO','ESTADO','RECIBIDA'],states:['en_tramite','emitida','rechazada'] },
+  solicitudes: { title:'Gestiones',subtitle:'Buzón de las gestiones que los clientes solicitan desde Banca Virtual: da seguimiento, asigna el límite aprobado y emite el producto.',columns:['GESTIÓN / CLIENTE','PRODUCTO','MONTO SOLICITADO','ESTADO','RECIBIDA'],states:['en_tramite','emitida','rechazada'] },
   creditos: { title:'Créditos autorizados',subtitle:'Créditos emitidos por el banco. La autorización no realiza un desembolso.',columns:['REFERENCIA / TITULAR','PRODUCTO','MONTO AUTORIZADO','SALDO','ESTADO'] },
   cuentas: { title:'Cuentas bancarias',subtitle:'Consulta saldos y movimientos de cuentas de ahorro y monetarias.',create:'Abrir cuenta',permission:'cuentas.write',columns:['CUENTA / TITULAR','TIPO','SALDO DISPONIBLE','ESTADO','APERTURA'],states:['activa','bloqueada'] },
   tarjetas: { title:'Tarjetas emitidas',subtitle:'Controla límites, consumos y pagos de tarjetas.',columns:['REFERENCIA / TITULAR','PRODUCTO','LÍMITE','DEUDA ACTUAL','ESTADO'] },
-  clientes: { title:'Directorio de clientes',subtitle:'Clientes de Banca Virtual y registros asistidos del banco.',create:'Registrar cliente',permission:'clientes.write',columns:['CLIENTE','IDENTIFICACIÓN','CORREO','INGRESO MENSUAL','REGISTRO'] },
+  clientes: { title:'Directorio de clientes',subtitle:'Todos los usuarios registrados en Banca Virtual y los clientes atendidos en agencia. El DPI vincula ambos.',create:'Registrar cliente',permission:'clientes.write',columns:['CLIENTE','DPI','CORREO','TELÉFONO','NIT','INGRESO MENSUAL','REGISTRO'] },
   productos: { title:'Productos y políticas',subtitle:'Catálogo de cuentas y tarjetas. Las tasas son políticas académicas configurables.',columns:['PRODUCTO','TIPO','TASA ANUAL','LÍMITE MÁXIMO','ESTADO'] },
   usuarios: { title:'Usuarios internos y roles',subtitle:'Administra el acceso del personal y los perfiles corporativos.',create:'Crear usuario interno',permission:'usuarios.write',columns:['USUARIO','CORREO','ROL','ESTADO','REGISTRO'] },
   empresas: { title:'Banca corporativa',subtitle:'Empresas, cuentas de dispersión y equipos autorizados.',create:'Registrar empresa',permission:'empresas.write',columns:['EMPRESA','NIT','PERSONAS AUTORIZADAS','REGISTRO'] },
@@ -29,7 +29,7 @@ function cells(r) {
   case 'creditos': return [[r.referencia,customer(r.cliente_id)],label(r.producto),money(r.limite_centavos),money(r.saldo_centavos),{badge:r.estado}]
   case 'cuentas': return [[r.numero,customer(r.cliente_id)],label(r.tipo),money(r.saldo_centavos),{badge:r.estado},date(r.created_at)]
   case 'tarjetas': return [[r.referencia,customer(r.cliente_id)],label(r.producto),money(r.limite_centavos),money(r.principal_centavos+r.interes_centavos),{badge:r.estado}]
-  case 'clientes': return [[r.nombre,r.external_ref],r.dpi_enmascarado,r.email,money(r.ingreso_centavos),date(r.created_at)]
+  case 'clientes': return [[r.nombre,r.acceso_app ? 'Con acceso a Banca Virtual' : 'Sin acceso a la app'],r.dpi_enmascarado,r.email,r.telefono || '—',r.nit || '—',r.ingreso_centavos == null ? '—' : money(r.ingreso_centavos),date(r.created_at)]
   case 'productos': return [[r.name,r.code],label(r.type),r.annual_bps == null ? 'Por definir' : `${r.annual_bps/100}%`,r.max_limit_cents == null ? 'Según evaluación' : money(r.max_limit_cents),{badge:r.active}]
   case 'usuarios': return [r.name,r.email,label(r.role),{badge:r.active},date(r.created_at)]
   case 'empresas': return [r.nombre,r.nit,r.miembros?.length,date(r.created_at)]

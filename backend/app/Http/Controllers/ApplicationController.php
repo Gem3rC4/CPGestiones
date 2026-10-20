@@ -14,6 +14,11 @@ class ApplicationController extends ApiController
 {
     public function store(OperationRequest $r, ApplicationService $s, ClientScope $scope)
     {
+        // Gestiones originate exclusively in Banca Virtual; staff process them from the inbox.
+        if ($r->attributes->get('actor') !== 'service:banca') {
+            throw new BusinessException('Las gestiones se solicitan desde Banca Virtual. El personal las procesa desde el buzón de Gestiones.', 'BANK_ORIGIN_REQUIRED', 403);
+        }
+
         return $this->mutation($r, function ($d, $a) use ($s, $scope) {
             $scope->check($d['cliente_id']);
 

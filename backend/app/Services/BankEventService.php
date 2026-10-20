@@ -23,7 +23,7 @@ class BankEventService
             return ['evento_id' => $previous->evento_id, 'alerta_id' => $previous->alerta_id];
         }
         $alerts = app(AlertService::class);
-        $customer = $data['tipo'] === 'registro.iniciado' ? null : app(CustomerRepository::class)->byReference($data['cliente_ref']);
+        $customer = $data['tipo'] === 'registro.iniciado' ? null : app(CustomerRepository::class)->resolve($data);
         if ($data['tipo'] === 'registro.iniciado') {
             $alert = $alerts->publish('registro.iniciado:'.$data['referencia'], 'clientes.read', 'Registro en proceso', 'Banca Virtual informó el inicio de un registro. Referencia: '.$data['referencia']);
         } elseif ($data['tipo'] === 'cliente.registrado') {

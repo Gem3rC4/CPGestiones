@@ -25,7 +25,7 @@ class QueryController extends ApiController
         $map = ['usuarios' => User::class, 'clientes' => Customer::class, 'productos' => Product::class, 'cuentas' => Account::class, 'solicitudes' => CardApplication::class, 'creditos' => Credit::class, 'tarjetas' => Card::class, 'empresas' => Company::class, 'planillas' => Payroll::class, 'bitacora' => AuditEvent::class, 'seguridad' => SecurityEvent::class];
         $resource = $r->route()->defaults['resource'];
         $model = $map[$resource];
-        $validated = $r->validate(['page' => 'sometimes|integer|min:1|max:100000', 'per_page' => 'sometimes|integer|min:1|max:100', 'estado' => 'sometimes|string|max:50', 'cliente_id' => 'sometimes|string|regex:/^[a-f0-9]{24}$/D', 'solicitud_id' => 'sometimes|string|regex:/^[a-f0-9]{24}$/D', 'empresa_id' => 'sometimes|string|regex:/^[a-f0-9]{24}$/D', 'cliente_ref' => 'sometimes|string|max:100']);
+        $validated = $r->validate(['page' => 'sometimes|integer|min:1|max:100000', 'per_page' => 'sometimes|integer|min:1|max:100', 'estado' => 'sometimes|string|max:50', 'cliente_id' => 'sometimes|string|regex:/^[a-f0-9]{24}$/D', 'solicitud_id' => 'sometimes|string|regex:/^[a-f0-9]{24}$/D', 'empresa_id' => 'sometimes|string|regex:/^[a-f0-9]{24}$/D', 'cliente_ref' => 'sometimes|string|max:100', 'dpi' => 'sometimes|string|regex:/^[0-9]{13}$/D']);
         $query = $repo->query($model);
         if ($resource === 'cuentas') {
             $query->whereNull('system_key');
@@ -68,7 +68,7 @@ class QueryController extends ApiController
         $apps->getCollection()->transform(function ($a) {
             $c = Customer::find($a->cliente_id);
             $result = $a->toArray();
-            $result['perfil_riesgo'] = $c?->only(['id', 'nombre', 'dpi', 'nit', 'ingreso_centavos', 'deuda_centavos', 'fecha_nacimiento', 'tipo_empleo', 'antiguedad_laboral_meses']);
+            $result['perfil_riesgo'] = $c?->only(['id', 'nombre', 'dpi', 'nit', 'ingreso_centavos', 'fecha_nacimiento', 'tipo_empleo', 'antiguedad_laboral_meses']);
             $result['saldo_cuentas_centavos'] = (int) Account::where('cliente_id', $a->cliente_id)->sum('saldo_centavos');
 
             return $result;

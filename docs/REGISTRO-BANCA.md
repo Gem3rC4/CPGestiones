@@ -1,5 +1,7 @@
 # Registro desde Banca Virtual — API v1.2
 
+> **Contrato vigente: [GUIA-BANCA-VIRTUAL.md](GUIA-BANCA-VIRTUAL.md) (versión 2, 20/10/2026).** Desde esa versión el cliente se identifica por **DPI** (`dpi`) en lugar de `cliente_ref` (que se sigue aceptando por compatibilidad); el registro solo crea el perfil de acceso y **ya no abre una cuenta de ahorro**; las cuentas se abren con `POST /banca/cuentas`; las gestiones nacen únicamente en Banca con `POST /banca/solicitudes`; la contraseña del cliente requiere 8 caracteres con letras y números; y existe `POST /banca/auth/recuperar`. Este documento conserva el detalle técnico de la versión anterior: donde haya diferencias, manda la guía.
+
 Contrato actualizado el 7 de octubre de 2026, basado en el JSON del formulario facilitado por el equipo. El registro y la apertura se verifican con MongoDB real en pruebas aisladas. La conexión al servidor de Banca Virtual aún debe realizarla su responsable.
 
 ## Qué debe integrar tu compañero

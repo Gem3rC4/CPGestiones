@@ -8,6 +8,7 @@ use App\Models\Customer;
 use App\Models\Movement;
 use App\Models\Product;
 use App\Repositories\AccountRepository;
+use App\Repositories\CustomerRepository;
 use App\Support\Money;
 use Illuminate\Support\Str;
 
@@ -91,7 +92,7 @@ class AccountService
     public function ownership(array $d, string $actor): void
     {
         if ($actor === 'service:banca') {
-            $customer = Customer::where('external_ref', $d['cliente_ref'] ?? '')->firstOrFail();
+            $customer = app(CustomerRepository::class)->resolve($d);
             $account = Account::findOrFail($d['origen_id']);
             if ($account->cliente_id !== (string) $customer->id) {
                 throw new BusinessException('La cuenta no pertenece al cliente autenticado.', 'FORBIDDEN', 403);

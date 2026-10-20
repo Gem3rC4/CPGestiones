@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Exceptions\BusinessException;
+use App\Http\Requests\BankCustomerRequest;
 use App\Http\Requests\BankServicePaymentRequest;
 use App\Models\Account;
 use App\Models\Customer;
@@ -25,9 +26,9 @@ class BankServiceController extends ApiController
 
     public function history(Request $request, ServicePaymentService $service): JsonResponse
     {
-        $data = $request->validate(['cliente_ref' => ['required', 'string', 'max:100'], 'page' => ['sometimes', 'integer', 'min:1', 'max:100000']]);
+        $data = $request->validate(BankCustomerRequest::identityRules() + ['page' => ['sometimes', 'integer', 'min:1', 'max:100000']], (new BankCustomerRequest)->messages());
 
-        return $this->ok($service->history($data['cliente_ref'], (int) ($data['page'] ?? 1)));
+        return $this->ok($service->history($data, (int) ($data['page'] ?? 1)));
     }
 
     /**
@@ -36,8 +37,8 @@ class BankServiceController extends ApiController
      */
     public function destination(Request $request, CustomerRepository $customers): JsonResponse
     {
-        $data = $request->validate(['cliente_ref' => ['required', 'string', 'max:100'], 'numero' => ['required', 'string', 'regex:/^[0-9]{10}$/D']]);
-        $requester = $customers->byReference($data['cliente_ref']);
+        $data = $request->validate(BankCustomerRequest::identityRules() + ['numero' => ['required', 'string', 'regex:/^[0-9]{10}$/D']], (new BankCustomerRequest)->messages());
+        $requester = $customers->resolve($data);
         $account = Account::where('numero', $data['numero'])->whereNull('system_key')->first();
         if (! $account || $account->estado !== 'activa') {
             throw new BusinessException('No existe una cuenta activa con ese número.', 'ACCOUNT_NOT_FOUND', 404);

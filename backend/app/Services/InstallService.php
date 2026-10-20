@@ -37,7 +37,7 @@ class InstallService
             ['creditos', ['solicitud_id' => 1], ['unique' => true]], ['creditos', ['cliente_id' => 1], []],
             ['usuarios', ['email' => 1], ['unique' => true]],
             ['tokens', ['token_hash' => 1], ['unique' => true]], ['tokens', ['expires_at' => 1], ['expireAfterSeconds' => 0]],
-            ['clientes', ['dpi' => 1], ['unique' => true]], ['clientes', ['external_ref' => 1], ['unique' => true]],
+            ['clientes', ['dpi' => 1], ['unique' => true]], ['clientes', ['external_ref' => 1], ['unique' => true, 'partialFilterExpression' => ['external_ref' => ['$type' => 'string']]]],
             ['clientes', ['dpi_hash' => 1], ['unique' => true, 'partialFilterExpression' => ['dpi_hash' => ['$type' => 'string']]]],
             ['clientes', ['email' => 1], ['unique' => true, 'partialFilterExpression' => ['email' => ['$type' => 'string']]]],
             ['productos', ['code' => 1], ['unique' => true]], ['cuentas', ['numero' => 1], ['unique' => true]],
@@ -56,6 +56,12 @@ class InstallService
             ['pagos_servicios', ['cliente_id' => 1, 'created_at' => -1], []], ['pagos_servicios', ['transaccion_id' => 1], ['unique' => true]],
             ['sesiones_clientes', ['cliente_id' => 1], []],
         ];
+        // external_ref used to be unique for every document; customers now may have no Banca reference.
+        foreach ($db->selectCollection('clientes')->listIndexes() as $index) {
+            if ($index->getName() === 'external_ref_1' && ! isset($index['partialFilterExpression'])) {
+                $db->selectCollection('clientes')->dropIndex('external_ref_1');
+            }
+        }
         foreach ($indexes as [$collection,$keys,$options]) {
             $db->selectCollection($collection)->createIndex($keys, $options);
         }

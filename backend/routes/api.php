@@ -25,6 +25,9 @@ Route::prefix('v1')->group(function () {
             Route::post('/auth/login', [CustomerAuthController::class, 'login'])->name('banca.login')->middleware('throttle:cliente-login');
             Route::get('/auth/sesion', [CustomerAuthController::class, 'session']);
             Route::post('/auth/logout', [CustomerAuthController::class, 'logout']);
+            Route::post('/auth/recuperar', [CustomerAuthController::class, 'recover'])->name('banca.recuperar')->middleware(['permit:clientes.write', 'throttle:cliente-recuperar']);
+            Route::post('/cuentas', [BankRegistrationController::class, 'openAccount'])->name('banca.cuentas')->middleware('permit:cuentas.write');
+            Route::post('/solicitudes', [BankRegistrationController::class, 'requestApplication'])->name('banca.solicitudes')->middleware('permit:solicitudes.write');
             Route::post('/auth/contrasena', [CustomerAuthController::class, 'password'])->name('banca.contrasena')->middleware(['permit:clientes.write', 'throttle:cliente-contrasena']);
             Route::get('/auth/sesiones', [CustomerAuthController::class, 'sessions']);
             Route::post('/auth/sesiones/{id}/revocar', [CustomerAuthController::class, 'revokeSession'])->where('id', '[a-f0-9]{24}');

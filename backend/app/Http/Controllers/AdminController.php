@@ -8,6 +8,7 @@ use App\Models\AccessToken;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Models\User;
+use App\Repositories\CustomerRepository;
 use App\Services\SecurityService;
 use App\Support\Money;
 use Illuminate\Support\Facades\Hash;
@@ -46,11 +47,17 @@ class AdminController extends ApiController
     public function customer(OperationRequest $r)
     {
         return $this->mutation($r, function ($d, $a) {
-            $d['email'] = mb_strtolower($d['email']);
+            $d['email'] = mb_strtolower(trim($d['email']));
+            // DPI is the key that later links this branch customer to their Banca Virtual profile.
+            if (app(CustomerRepository::class)->byDpi($d['dpi']) || Customer::where('email', $d['email'])->exists()) {
+                throw new BusinessException('Ya existe un cliente con ese DPI o correo electrónico.', 'CUSTOMER_EXISTS', 409);
+            }
             $d['ingreso_centavos'] = Money::cents($d['ingreso_mensual'], true);
-            $d['deuda_centavos'] = Money::cents($d['deuda_mensual'], true);
-            unset($d['ingreso_mensual'],$d['deuda_mensual']);
-            $c = Customer::create($d);
+            unset($d['ingreso_mensual']);
+            if (empty($d['fecha_nacimiento'])) {
+                unset($d['fecha_nacimiento']);
+            }
+            $c = Customer::create($d + ['perfil_version' => 1, 'origen' => 'agencia', 'active' => true, 'failed_attempts' => 0]);
             app(SecurityService::class)->record('cliente_creado', $a, ['cliente_id' => (string) $c->id]);
 
             return $c->toArray();

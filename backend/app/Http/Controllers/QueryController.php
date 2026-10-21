@@ -59,8 +59,18 @@ class QueryController extends ApiController
             throw new BusinessException('El registro global de movimientos es exclusivo del personal del banco.', 'FORBIDDEN', 403);
         }
         $query = $repo->query(self::MODELS[$resource]);
+        // Personal and corporate banking never mix: company accounts, company users and company-holder
+        // customers only appear when a company is asked for explicitly (empresa_id).
+        $companyScope = $validated['empresa_id'] ?? null;
         if ($resource === 'cuentas') {
             $query->whereNull('system_key');
+            $companyScope ? $query->where('empresa_id', $companyScope) : $query->whereNull('empresa_id');
+        }
+        if ($resource === 'clientes') {
+            $query->where('segmento', '!=', 'empresa');
+        }
+        if ($resource === 'usuarios') {
+            $companyScope ? $query->where('role', 'empresa')->where('empresa_id', $companyScope) : $query->where('role', '!=', 'empresa');
         }
         if (in_array($resource, ['clientes', 'cuentas', 'solicitudes', 'tarjetas', 'creditos'], true)) {
             $cid = $scope->customerId();
@@ -104,6 +114,9 @@ class QueryController extends ApiController
         if ($resource === 'movimientos') {
             $this->withAccountNumbers($page);
         }
+        if ($resource === 'empresas') {
+            $this->withCompanyBalances($page);
+        }
         if ($resource === 'creditos') {
             $loans = app(LoanService::class);
             $page->setCollection($page->getCollection()->map(fn (Credit $credit): array => $loans->view($credit)));
@@ -145,21 +158,36 @@ class QueryController extends ApiController
         return Account::where(fn ($q) => $q->where('numero', 'regex', $pattern)->orWhereIn('cliente_id', $owners))->limit(500)->get()->map(fn ($a) => (string) $a->id)->all();
     }
 
+    private function withCompanyBalances($page): void
+    {
+        $ids = $page->getCollection()->map(fn (Company $c) => (string) $c->id)->all();
+        $accounts = Account::whereIn('empresa_id', $ids)->get()->groupBy('empresa_id');
+        $users = User::where('role', 'empresa')->whereIn('empresa_id', $ids)->get()->groupBy('empresa_id');
+        $page->setCollection($page->getCollection()->map(fn (Company $c): array => $c->toArray() + [
+            'saldo_total_centavos' => (int) ($accounts[(string) $c->id] ?? collect())->sum('saldo_centavos'),
+            'cuentas_total' => ($accounts[(string) $c->id] ?? collect())->count(),
+            'representantes_total' => ($users[(string) $c->id] ?? collect())->count(),
+        ]));
+    }
+
     private function withAccountNumbers($page): void
     {
         $accounts = Account::whereIn('_id', $page->getCollection()->pluck('cuenta_id')->filter()->unique()->values()->all())->get()->keyBy(fn (Account $a) => (string) $a->id);
         $names = Customer::whereIn('_id', $accounts->pluck('cliente_id')->filter()->unique()->values()->all())->get()->keyBy(fn (Customer $c) => (string) $c->id);
-        $page->setCollection($page->getCollection()->map(function (Movement $movement) use ($accounts, $names): array {
+        $companies = Company::whereIn('_id', $accounts->pluck('empresa_id')->filter()->unique()->values()->all())->get()->keyBy(fn (Company $c) => (string) $c->id);
+        $page->setCollection($page->getCollection()->map(function (Movement $movement) use ($accounts, $names, $companies): array {
             $account = $accounts->get((string) $movement->cuenta_id);
+            $company = $account?->empresa_id ? $companies->get((string) $account->empresa_id) : null;
 
-            return $movement->toArray() + ['cuenta_numero' => $account?->numero, 'cuenta_interna' => (bool) $account?->system_key, 'cuenta_nombre' => $account?->system_key ? $account->nombre : null, 'cliente_id' => $account?->cliente_id, 'cliente_nombre' => $names->get((string) $account?->cliente_id)?->nombre];
+            return $movement->toArray() + ['cuenta_numero' => $account?->numero, 'cuenta_interna' => (bool) $account?->system_key, 'cuenta_nombre' => $account?->system_key ? $account->nombre : null, 'cliente_id' => $account?->cliente_id, 'empresa_id' => $account?->empresa_id,
+                'cliente_nombre' => $company ? $company->nombre.' (empresa)' : $names->get((string) $account?->cliente_id)?->nombre];
         }));
     }
 
     public function dashboard()
     {
         $recent = CardApplication::orderBy('created_at', 'desc')->limit(6)->get();
-        $customerAccounts = fn () => Account::whereNull('system_key');
+        $customerAccounts = fn () => Account::whereNull('system_key')->whereNull('empresa_id');
         $creditCards = fn () => Card::where('tipo', 'credito');
         $todayStart = now()->timezone(config('operations.timezone'))->startOfDay()->utc();
         $today = now()->timezone(config('operations.timezone'))->toDateString();
@@ -180,7 +208,7 @@ class QueryController extends ApiController
             'concentradora' => $master ? ['numero' => $master->numero, 'nombre' => $master->nombre, 'saldo_centavos' => (int) $master->saldo_centavos, 'desembolsado_centavos' => (int) Credit::sum('desembolsado_centavos')] : null,
             // Centralized registry: totals Gestiones administers as the core of the three systems.
             'global' => [
-                'clientes' => Customer::count(),
+                'clientes' => Customer::where('segmento', '!=', 'empresa')->count(),
                 'clientes_con_app' => Customer::whereNotNull('password')->count(),
                 'sesiones_app_activas' => CustomerSession::where('expires_at', '>', now())->count(),
                 'cuentas_ahorro' => $customerAccounts()->where('tipo', 'ahorro')->count(),
@@ -203,6 +231,8 @@ class QueryController extends ApiController
                 'pagos_servicios' => ServicePayment::count(),
                 'pagos_servicios_centavos' => (int) ServicePayment::sum('monto_centavos'),
                 'empresas' => Company::count(),
+                'cuentas_empresariales' => Account::whereNull('system_key')->whereNotNull('empresa_id')->count(),
+                'saldo_empresas_centavos' => (int) Account::whereNull('system_key')->whereNotNull('empresa_id')->sum('saldo_centavos'),
                 'colaboradores' => Collaborator::count(),
             ],
         ]);

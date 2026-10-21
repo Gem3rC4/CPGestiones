@@ -19,15 +19,23 @@ use Illuminate\Support\Facades\Schedule;
 Artisan::command('cp:install', function (InstallService $service) {
     $service->indexes();
     $service->catalog();
-    $service->fundMasterAccount();
-    $purged = $service->purgeCorporateDemo();
-    $roles = $service->migrateRoles();
-    $this->info('Colecciones, índices, catálogo y cuenta concentradora listos.');
-    if (array_sum($purged) > 0) {
-        $this->info('Datos de prueba corporativos eliminados: '.json_encode($purged, JSON_UNESCAPED_UNICODE));
-    }
-    if ($roles > 0) {
-        $this->info('Usuarios migrados a los nuevos roles: '.$roles);
+    $this->info('Colecciones, índices y catálogo listos.');
+    // Each upgrade step is independent: one that fails is reported and retried on the next start,
+    // without keeping the API from starting.
+    $steps = [
+        'Cuenta concentradora' => fn () => $service->fundMasterAccount(),
+        'Limpieza de datos de prueba corporativos' => fn () => $service->purgeCorporateDemo(),
+        'Migración de roles' => fn () => $service->migrateRoles(),
+        'Cuentas de empresas' => fn () => $service->migrateCompanyAccounts(),
+    ];
+    foreach ($steps as $name => $step) {
+        try {
+            $result = $step();
+            $this->info($name.': '.(is_array($result) ? json_encode($result, JSON_UNESCAPED_UNICODE) : ($result ?? 'listo')));
+        } catch (Throwable $e) {
+            report($e);
+            $this->warn($name.' no se completó: '.$e->getMessage());
+        }
     }
 });
 Artisan::command('cp:upgrade-registration', function (RegistrationUpgradeService $service) {

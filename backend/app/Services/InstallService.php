@@ -110,6 +110,31 @@ class InstallService
     }
 
     /**
+     * Before v3 a company paid payroll from an account of a customer created only to hold it. That account
+     * now belongs to the company, and such a holder (no app access, no personal accounts) leaves the
+     * personal directory. Idempotent.
+     */
+    public function migrateCompanyAccounts(): int
+    {
+        $moved = 0;
+        foreach (Company::all() as $company) {
+            $account = $company->cuenta_id ? Account::find($company->cuenta_id) : null;
+            if (! $account || $account->empresa_id === (string) $company->id) {
+                continue;
+            }
+            $account->update(['empresa_id' => (string) $company->id]);
+            $company->update(['cuenta_numero' => $account->numero, 'segmento' => 'empresarial']);
+            $holder = $account->cliente_id ? Customer::find($account->cliente_id) : null;
+            if ($holder && ! $holder->password && ! Account::where('cliente_id', (string) $holder->id)->whereNull('empresa_id')->exists()) {
+                $holder->update(['segmento' => 'empresa', 'empresa_id' => (string) $company->id]);
+            }
+            $moved++;
+        }
+
+        return $moved;
+    }
+
+    /**
      * Earlier versions had seven roles; the project now defines three. Runs on every start and is idempotent.
      */
     public function migrateRoles(): int

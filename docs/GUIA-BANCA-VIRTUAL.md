@@ -8,6 +8,8 @@ Esta guía es para quien desarrolla **CP Banca Virtual**. CP Gestiones es el sis
 > - **Préstamos con cuotas** (nuevo 4.18): al aprobarlo, el banco deposita el dinero en la cuenta del cliente y define cuotas, tasa y día de pago. La app muestra el plan de pagos y el cliente paga sus cuotas.
 > - **Tarjetas con día de corte y día de pago**: el saldo de cada corte se debita automáticamente de la cuenta elegida el día de pago (4.12).
 > - **Tipo de cambio** del Banco de Guatemala: `GET /banca/tipo-cambio` (4.19).
+> - **Saldos:** léelos siempre de Gestiones y sin caché (ver 2.2). Un depósito hecho en el panel del banco se refleja al instante en `GET /banca/resumen`.
+> - **Banca corporativa separada:** las cuentas de empresas ya no pertenecen a un cliente persona, así que no aparecen en la banca personal.
 >
 > **Versión 2 del contrato (20/10/2026).** Cambios respecto a la versión anterior:
 > - El cliente se identifica por su **DPI** en todas las llamadas (`dpi`). `cliente_ref` ya no es necesario; se sigue aceptando para no romper lo que ya esté conectado.
@@ -59,6 +61,14 @@ GET /banca/resumen
 Authorization: Bearer TOKEN_DE_INTEGRACION_BANCA
 X-Cliente-Token: 6f1c...e9a2
 ```
+
+### 2.2 Saldos siempre al día
+
+Gestiones es la única fuente de saldos: un depósito en ventanilla, una planilla o un desembolso de préstamo cambian el saldo **en el momento**. Para que la app lo muestre:
+
+- Consulta `GET /banca/resumen` (o `GET /cuentas`) **cada vez** que se abre Inicio o Cuentas. No guardes saldos en la base de Banca ni los copies al registrarse el cliente.
+- Si tu servidor es **Next.js**, sus `fetch` se guardan en caché por defecto y seguirías viendo el saldo viejo: usa `fetch(url, { cache: 'no-store' })` o `export const dynamic = 'force-dynamic'` en esas páginas. Las respuestas de Gestiones ya llevan `Cache-Control: no-store`.
+- Opcional: si configuraste el webhook (Integraciones del panel), recibes el evento `cuenta.movimiento` con `cliente_id`, `cuenta_id`, `numero`, `tipo`, `concepto`, `importe_centavos` y el **saldo nuevo** (`saldo_centavos`, `saldo`) para refrescar la pantalla sin esperar a que el cliente recargue.
 
 | HTTP | Significado |
 | --- | --- |

@@ -21,7 +21,7 @@ use App\Http\Middleware\BankIntegration;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
-    Route::get('/health', fn () => response()->json(['ok' => true, 'name' => 'CP Gestiones', 'version' => '2.0.0']));
+    Route::get('/health', fn () => response()->json(['ok' => true, 'name' => 'CP Gestiones', 'version' => '2.1.0']));
     Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:login')->name('auth.login');
     Route::post('/auth/refresh', [AuthController::class, 'refresh'])->middleware('throttle:login')->name('auth.refresh');
     Route::middleware(['token', 'throttle:api'])->group(function () {
@@ -78,6 +78,9 @@ Route::prefix('v1')->group(function () {
         Route::patch('/tarjetas/{id}/estado', [CardController::class, 'state'])->name('tarjetas.state')->middleware('permit:tarjetas.write');
         Route::get('/tarjetas/{id}/estados-cuenta', [CardController::class, 'statements'])->middleware('permit:tarjetas.read');
         $post('/empresas', PayrollController::class, 'company', 'empresas.store', 'empresas.write');
+        Route::get('/empresas/{id}', [PayrollController::class, 'companyDetail'])->middleware('permit:empresas.read')->where('id', '[a-f0-9]{24}');
+        $post('/empresas/{id}/cuentas', PayrollController::class, 'companyAccount', 'empresas.cuentas', 'empresas.write');
+        $post('/empresas/{id}/usuarios', PayrollController::class, 'companyUser', 'empresas.usuarios', 'usuarios.write');
         $post('/planillas', PayrollController::class, 'store', 'planillas.store', 'planillas.write');
         $post('/colaboradores', PayrollController::class, 'collaborator', 'colaboradores.store', 'colaboradores.write');
         Route::get('/creditos/{id}', [CreditController::class, 'show'])->middleware('permit:creditos.read')->where('id', '[a-f0-9]{24}');

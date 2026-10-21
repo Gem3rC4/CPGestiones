@@ -34,7 +34,7 @@ const nav=[
  {key:'planillas',name:'Planillas',icon:Users,group:'BANCA CORPORATIVA',permission:'planillas.read'},
  {key:'clientes',name:'Clientes',icon:Users,group:'ADMINISTRACIÓN',permission:'clientes.read'},
  {key:'productos',name:'Productos y políticas',icon:Boxes,group:'ADMINISTRACIÓN',permission:'productos.read'},
- {key:'usuarios',name:'Usuarios y roles',icon:ShieldCheck,group:'ADMINISTRACIÓN',permission:'usuarios.read'},
+ {key:'usuarios',name:'Usuarios del banco',icon:ShieldCheck,group:'ADMINISTRACIÓN',permission:'usuarios.read'},
  {key:'bitacora',name:'Bitácora de gestiones',icon:ScrollText,group:'ADMINISTRACIÓN',permission:'bitacora.read'},
  {key:'seguridad',name:'Actividad y seguridad',icon:Activity,group:'ADMINISTRACIÓN',permission:'seguridad.read'},
  {key:'integraciones',name:'Integraciones',icon:PlugZap,group:'ECOSISTEMA',permission:'integraciones.read'},

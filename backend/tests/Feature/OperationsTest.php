@@ -15,6 +15,7 @@ use App\Models\Customer;
 use App\Models\CustomerSession;
 use App\Models\DailyAccrual;
 use App\Models\IdempotencyRecord;
+use App\Models\IntegrationSetting;
 use App\Models\Movement;
 use App\Models\OutboxEvent;
 use App\Models\Payroll;
@@ -32,6 +33,7 @@ use App\Services\InstallService;
 use App\Services\OutboxService;
 use App\Services\SavingsService;
 use App\Support\Money;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
@@ -772,5 +774,77 @@ final class OperationsTest extends TestCase
         $this->getJson('/api/v1/clientes?orden=nombre&direccion=asc', $this->headers())->assertOk()->assertJsonPath('data.data.0.nombre', 'Ana Lucía Méndez');
         $this->getJson('/api/v1/clientes?orden=password', $this->headers())->assertUnprocessable();
         $this->getJson('/api/v1/clientes?desde=2000-01-01&hasta=2000-01-31', $this->headers())->assertOk()->assertJsonPath('data.total', 0);
+    }
+
+    public function test_corporate_banking_keeps_companies_apart_from_personal_customers(): void
+    {
+        $person = $this->customer('persona');
+        $personal = $this->account($person, 0);
+        $body = ['nombre' => 'Distribuidora Norte S.A.', 'nit' => '7788990', 'correo' => 'pagos@norte.test', 'producto_cuenta' => 'monetaria', 'representante_nombre' => 'Lucía Norte', 'representante_correo' => 'lucia@norte.test'];
+        $this->postJson('/api/v1/empresas', $body + ['contrasena' => 'corta'], $this->headers())->assertUnprocessable()->assertJsonValidationErrors('contrasena');
+        $company = $this->postJson('/api/v1/empresas', $body + ['contrasena' => 'RepresentanteNorte2026'], $this->headers())->assertCreated()
+            ->assertJsonPath('data.cuentas.0.tipo', 'monetaria')->assertJsonPath('data.representantes.0.email', 'lucia@norte.test')->json('data');
+        $this->postJson('/api/v1/empresas', $body + ['contrasena' => 'RepresentanteNorte2026'], $this->headers())->assertConflict();
+        $id = $company['id'];
+        $extra = $this->postJson('/api/v1/empresas/'.$id.'/cuentas', ['producto' => 'ahorro', 'nombre' => 'Reserva'], $this->headers())->assertCreated()->json('data');
+        $this->postJson('/api/v1/empresas/'.$id.'/usuarios', ['nombre' => 'Mario Norte', 'correo' => 'mario@norte.test', 'contrasena' => 'MarioNorte2026x'], $this->headers())->assertCreated()->assertJsonPath('data.role', 'empresa');
+        $this->postJson('/api/v1/caja', ['cuenta_id' => $company['cuenta_id'], 'tipo' => 'deposito', 'monto' => '9000.00', 'concepto' => 'Fondeo de planillas'], $this->headers())->assertCreated();
+
+        // Personal screens never show the company, its accounts or its users…
+        $personalAccounts = array_column($this->getJson('/api/v1/cuentas', $this->headers())->json('data.data'), 'id');
+        self::assertSame([(string) $personal->id], $personalAccounts);
+        self::assertNotContains('lucia@norte.test', array_column($this->getJson('/api/v1/usuarios', $this->headers())->json('data.data'), 'email'));
+        // …and the corporate screens never show personal customers.
+        $corporate = $this->getJson('/api/v1/cuentas?empresa_id='.$id, $this->headers())->json('data.data');
+        self::assertEqualsCanonicalizing([$company['cuenta_id'], $extra['id']], array_column($corporate, 'id'));
+        self::assertEqualsCanonicalizing(['lucia@norte.test', 'mario@norte.test'], array_column($this->getJson('/api/v1/usuarios?empresa_id='.$id, $this->headers())->json('data.data'), 'email'));
+        $detail = $this->getJson('/api/v1/empresas/'.$id, $this->headers())->assertOk()->json('data');
+        self::assertSame(900000, $detail['saldo_total_centavos']);
+        self::assertCount(2, $detail['representantes']);
+        self::assertSame(900000, $this->getJson('/api/v1/empresas', $this->headers())->json('data.data.0.saldo_total_centavos'));
+
+        $this->postJson('/api/v1/colaboradores', ['empresa_id' => $id, 'cuenta_id' => $extra['id'], 'puesto' => 'X', 'salario' => '1.00'], $this->headers())->assertUnprocessable()->assertJsonPath('message', 'Las cuentas de empresas no reciben planilla: elige la cuenta personal del colaborador.');
+        $this->postJson('/api/v1/colaboradores', ['empresa_id' => $id, 'cliente_id' => (string) $person->id, 'cuenta_id' => (string) $personal->id, 'puesto' => 'Chofer', 'salario' => '3000.00'], $this->headers())->assertCreated();
+        $rep = $this->postJson('/api/v1/auth/login', ['email' => 'lucia@norte.test', 'password' => 'RepresentanteNorte2026'])->assertOk()->json('data.token');
+        $this->getJson('/api/v1/empresas/'.$id, $this->headers($rep))->assertOk();
+        $other = Company::create(['nombre' => 'Otra', 'nit' => 'OTRA-1', 'miembros' => []]);
+        $this->getJson('/api/v1/empresas/'.$other->id, $this->headers($rep))->assertForbidden();
+        $this->postJson('/api/v1/empresas/'.$id.'/cuentas', ['producto' => 'ahorro'], $this->headers($rep))->assertForbidden();
+    }
+
+    public function test_install_moves_legacy_company_accounts_out_of_the_personal_directory(): void
+    {
+        $holder = Customer::create(['nombre' => 'Comercial Antigua S.A.', 'dpi' => '4444555566667']);
+        $account = $this->account($holder, 1000);
+        $person = $this->customer('dueña');
+        $person->update(['password' => Hash::make('clave2026')]);
+        $shared = $this->account($person, 500);
+        $legacy = Company::create(['nombre' => 'Comercial Antigua S.A.', 'nit' => 'ANT-1', 'cuenta_id' => (string) $account->id, 'miembros' => []]);
+        $shop = Company::create(['nombre' => 'Tienda de la dueña', 'nit' => 'ANT-2', 'cuenta_id' => (string) $shared->id, 'miembros' => []]);
+        self::assertSame(2, app(InstallService::class)->migrateCompanyAccounts());
+        self::assertSame(0, app(InstallService::class)->migrateCompanyAccounts());
+        self::assertSame((string) $legacy->id, $account->refresh()->empresa_id);
+        self::assertSame('empresa', $holder->refresh()->segmento);
+        self::assertNull($person->refresh()->segmento, 'A customer with app access stays in the personal directory.');
+        $names = array_column($this->getJson('/api/v1/clientes', $this->headers())->json('data.data'), 'nombre');
+        self::assertNotContains('Comercial Antigua S.A.', $names);
+        self::assertContains('Cliente dueña', $names);
+        self::assertSame((string) $shop->id, $shared->refresh()->empresa_id);
+    }
+
+    public function test_banca_is_notified_of_every_balance_change_when_its_webhook_is_configured(): void
+    {
+        $customer = $this->customer('saldo');
+        $account = $this->account($customer, 0);
+        $deposit = fn (string $key) => $this->postJson('/api/v1/caja', ['cuenta_id' => (string) $account->id, 'tipo' => 'deposito', 'monto' => '5000.00', 'concepto' => 'Pago Quincena'], $this->headers(key: $key))->assertCreated();
+        $deposit('deposit-without-webhook');
+        self::assertSame(0, OutboxEvent::where('type', 'cuenta.movimiento')->count());
+        IntegrationSetting::create(['sistema' => 'banca', 'url' => 'https://banca.example.test/webhooks/gestiones', 'secreto' => Crypt::encryptString('secreto-compartido-123')]);
+        $deposit('deposit-with-webhook');
+        $event = OutboxEvent::where('type', 'cuenta.movimiento')->firstOrFail();
+        self::assertSame(1000000, $event->payload['saldo_centavos']);
+        self::assertSame('10000.00', $event->payload['saldo']);
+        self::assertSame((string) $customer->id, $event->payload['cliente_id']);
+        self::assertSame(1, OutboxEvent::where('type', 'cuenta.movimiento')->count(), 'The internal cash account is not announced.');
     }
 }

@@ -23,6 +23,9 @@ class CorporateService
         if (! $account || $account->system_key || $account->estado !== 'activa') {
             throw new BusinessException('No existe una cuenta activa con ese número.', 'ACCOUNT_NOT_FOUND', 404);
         }
+        if ($account->empresa_id) {
+            throw new BusinessException('Las cuentas de empresas no reciben planilla: elige la cuenta personal del colaborador.', 'INVALID_ACCOUNT', 422);
+        }
         $customer = Customer::find($account->cliente_id);
         if (! $customer || (isset($data['cliente_id']) && $data['cliente_id'] !== (string) $customer->id)) {
             throw new BusinessException('La cuenta seleccionada no pertenece a ese cliente.', 'INVALID_ACCOUNT', 422);

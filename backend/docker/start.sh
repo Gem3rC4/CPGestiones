@@ -17,8 +17,8 @@ artisan() { runuser -u www-data -- php artisan "$@" --no-interaction; }
 
 artisan config:cache
 # Idempotentes: crean colecciones, índices, catálogo y el primer administrador si falta.
-artisan cp:install
-artisan cp:bootstrap-admin
+artisan cp:install || echo "cp:install falló; la API arranca igual y se reintenta en el próximo inicio." >&2
+artisan cp:bootstrap-admin || echo "cp:bootstrap-admin falló." >&2
 
 # Planillas, eventos de integración y cierre diario. Se alinea al inicio de cada minuto.
 (

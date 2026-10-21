@@ -29,8 +29,8 @@ class ReportController extends ApiController
         $companies = $can('reportes.planillas') ? Company::orderBy('nombre')->when($r->user()?->role === 'empresa', fn ($q) => $q->where('_id', $r->user()->empresa_id))->get()->map(fn (Company $c): array => ['id' => (string) $c->id, 'nombre' => $c->nombre, 'nit' => $c->nit])->values() : [];
         $customers = [];
         if ($can('reportes.cuentas')) {
-            $accounts = Account::whereNull('system_key')->get()->groupBy('cliente_id');
-            $customers = Customer::orderBy('nombre')->get()->map(fn (Customer $c): array => ['id' => (string) $c->id, 'nombre' => $c->nombre, 'dpi_enmascarado' => $c->dpi_enmascarado,
+            $accounts = Account::whereNull('system_key')->whereNull('empresa_id')->get()->groupBy('cliente_id');
+            $customers = Customer::where('segmento', '!=', 'empresa')->orderBy('nombre')->get()->map(fn (Customer $c): array => ['id' => (string) $c->id, 'nombre' => $c->nombre, 'dpi_enmascarado' => $c->dpi_enmascarado,
                 'cuentas' => ($accounts[(string) $c->id] ?? collect())->map(fn (Account $a): array => ['id' => (string) $a->id, 'numero' => $a->numero, 'tipo' => $a->tipo])->values()])->values();
         }
 
@@ -98,7 +98,7 @@ class ReportController extends ApiController
         $rows = $movements->map(function (Movement $m) use ($accounts, $names): array {
             $account = $accounts[$m->cuenta_id] ?? null;
 
-            return ['fecha' => $m->created_at?->toIso8601String(), 'cuenta_numero' => $account?->numero, 'titular' => $names->get((string) $account?->cliente_id)?->nombre ?? '—', 'tipo' => $m->tipo, 'concepto' => $m->concepto, 'importe_centavos' => (int) $m->importe_centavos];
+            return ['fecha' => $m->created_at?->toIso8601String(), 'cuenta_numero' => $account?->numero, 'titular' => $account?->empresa_id ? (Company::find($account->empresa_id)?->nombre ?? 'Empresa').' (empresa)' : ($names->get((string) $account?->cliente_id)?->nombre ?? '—'), 'tipo' => $m->tipo, 'concepto' => $m->concepto, 'importe_centavos' => (int) $m->importe_centavos];
         });
         $byType = $rows->groupBy('tipo')->map(fn ($group, $type): array => ['tipo' => $type, 'cantidad' => $group->count(), 'ingresos_centavos' => $group->where('importe_centavos', '>', 0)->sum('importe_centavos'), 'egresos_centavos' => -$group->where('importe_centavos', '<', 0)->sum('importe_centavos')])->sortBy('tipo')->values();
 

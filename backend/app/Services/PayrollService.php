@@ -44,7 +44,7 @@ class PayrollService
                 isset($p['cuenta_id']) => Account::find($p['cuenta_id']),
                 default => Account::where('numero', $p['cuenta_numero'] ?? '')->first(),
             };
-            if (! $target || (string) $target->id === (string) $source->id || $target->estado !== 'activa' || $target->moneda !== $source->moneda || $target->system_key) {
+            if (! $target || (string) $target->id === (string) $source->id || $target->estado !== 'activa' || $target->moneda !== $source->moneda || $target->system_key || $target->empresa_id) {
                 throw new BusinessException('La cuenta de '.($p['nombre'] ?? 'un beneficiario').' no existe o no está activa.', 'INVALID_PAYROLL', 422);
             }
             if (isset($seen[(string) $target->id])) {

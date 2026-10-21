@@ -40,6 +40,9 @@ class AdminController extends ApiController
     {
         return $this->mutation($r, function ($d, $a) use ($id) {
             $u = User::findOrFail($id);
+            if ($u->protegido && $id !== $a) {
+                throw new BusinessException('El administrador principal está protegido: solo él puede cambiar su contraseña.', 'ADMIN_PROTECTED', 403);
+            }
             $u->update(['password' => Hash::make($d['contrasena']), 'failed_attempts' => 0, 'locked_until' => null]);
             // Other sessions of that person end; an administrator changing their own password keeps working.
             $session = request()->attributes->get('user_session');
@@ -58,6 +61,9 @@ class AdminController extends ApiController
                 throw new BusinessException('Otro administrador debe cambiar tu propio acceso.', 'SELF_ROLE_CHANGE', 403);
             }
             $u = User::findOrFail($id);
+            if ($u->protegido) {
+                throw new BusinessException('El administrador principal está protegido: su rol y su acceso no se pueden cambiar.', 'ADMIN_PROTECTED', 403);
+            }
             $previousCompany = $u->empresa_id;
             $d = $this->companyLink($d);
             // Only the "empresa" role belongs to a company.

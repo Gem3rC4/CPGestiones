@@ -102,11 +102,15 @@ En línea la base empieza con el catálogo, la cuenta concentradora y el adminis
 
 ## Roles
 
-| Rol | Qué puede hacer |
-| --- | --- |
-| **Administrador** | Todo el sistema. Es el único que crea usuarios y asigna roles. Aprueba gestiones (préstamos con cuotas, tarjetas con corte y pago), registra clientes con su acceso a Banca Virtual y su cuenta, empresas y colaboradores. |
-| **Operador** | Solo el módulo de operaciones: **Transacciones** (con búsqueda, filtros y orden) y **Reportes** en PDF. |
-| **Empresa** | Representante de **una** empresa: ve a sus colaboradores, carga, autoriza (se paga al instante) y descarga en PDF las planillas de su empresa. |
+El menú tiene tres módulos: **Operaciones** (resumen, gestiones, cuentas, préstamos, tarjetas, transacciones, reportes), **Banca corporativa** (empresas, sus usuarios y cuentas, colaboradores, planillas) y **Administración** (clientes, usuarios del banco, productos, bitácora, seguridad, integraciones). La API valida cada permiso aunque se llame sin el panel.
+
+| Rol | Operaciones | Banca corporativa | Administración |
+| --- | --- | --- | --- |
+| **Administrador** | ✅ | ✅ | ✅ Único que crea usuarios del banco. El administrador original está protegido: nadie más puede cambiar su rol, desactivarlo ni cambiar su contraseña. |
+| **Mixto** | ✅ | ✅ | ❌ |
+| **Operador** | ✅ | ❌ | ❌ |
+| **Corporativo** | ❌ | ✅ (crea usuarios de empresas, cuentas corporativas, fondeos y planillas) | ❌ |
+| **Empresa** | ❌ | Solo su empresa: colaboradores, planillas y su reporte | ❌ |
 
 ## Recorrido de demostración
 

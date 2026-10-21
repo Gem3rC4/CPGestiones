@@ -17,7 +17,7 @@ const session=ref(null), expired=ref(false), module=ref('dashboard'), sidebar=re
 const dashboard=ref(null), rows=ref([]), pagination=ref(null), integrations=ref(null), spec=ref(null), detail=ref(null)
 // Server-side query of the current listing: page, status, text, order and dates.
 const query=reactive({page:1,estado:'',q:'',orden:'',direccion:'',desde:'',hasta:''})
-const lookups=reactive({clientes:[],cuentas:[],productos:[],empresas:[],colaboradores:[]})
+const lookups=reactive({clientes:[],cuentas:[],productos:[],empresas:[],colaboradores:[],candidatos:[]})
 const lookupError=ref('')
 let generation=0, toastTimer
 const can=permission=>[].concat(permission).some(p=>session.value?.permissions.includes('*') || session.value?.permissions.includes(p))
@@ -39,7 +39,11 @@ const nav=[
  {key:'seguridad',name:'Actividad y seguridad',icon:Activity,group:'ADMINISTRACIÓN',permission:'seguridad.read'},
  {key:'integraciones',name:'Integraciones',icon:PlugZap,group:'ECOSISTEMA',permission:'integraciones.read'},
 ]
-const allowed=computed(()=>nav.filter(n=>can(n.permission)))
+// Each menu group is a module; a role only sees the modules it has (Administración is administrator only).
+const groupPermission={'OPERACIÓN':'modulo.operaciones','BANCA CORPORATIVA':'modulo.corporativo','ADMINISTRACIÓN':'modulo.administracion','ECOSISTEMA':'modulo.administracion'}
+// Reports live in Operaciones; a corporate-only role finds its payroll report under Banca corporativa.
+const groupOf=n=>n.key==='reportes' && !can('modulo.operaciones') ? 'BANCA CORPORATIVA' : n.group
+const allowed=computed(()=>{ const items=nav.map(n=>({...n,group:groupOf(n)})).filter(n=>can(n.permission) && can(groupPermission[n.group])); const moved=items.filter(n=>n.key==='reportes' && n.group!=='OPERACIÓN'); return [...items.filter(n=>!moved.includes(n)),...moved] })
 const current=computed(()=>nav.find(n=>n.key===module.value))
 // Phones: up to four main sections in a bottom bar; the rest stay in the menu.
 const bottomNav=computed(()=>{ const preferred=['dashboard','solicitudes','cuentas','clientes']; const items=preferred.map(k=>allowed.value.find(n=>n.key===k)).filter(Boolean); return (items.length ? items : allowed.value).slice(0,4) })
@@ -91,6 +95,8 @@ async function loadLookups() {
     } while(currentPage<=lastPage)
     if(session.value===owner) lookups[key]=records
   })
+  // People who can be assigned as collaborators (corporate banking does not read the personal directory).
+  if(can('colaboradores.write')) tasks.push(get('/colaboradores/candidatos').then(rows=>{ if(session.value===owner) lookups.candidatos=rows }))
   const results=await Promise.allSettled(tasks)
   if(session.value===owner && results.some(r=>r.status==='rejected')) lookupError.value='No fue posible cargar algunos catálogos. Actualiza para volver a intentar.'
 }

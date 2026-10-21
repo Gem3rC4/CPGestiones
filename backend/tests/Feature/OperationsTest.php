@@ -640,26 +640,64 @@ final class OperationsTest extends TestCase
         $this->travelBack();
     }
 
-    public function test_only_the_administrator_manages_users_and_roles_follow_the_three_profiles(): void
+    public function test_role_matrix_separates_operations_corporate_banking_and_administration(): void
     {
+        app(InstallService::class)->fundMasterAccount();
         $operator = $this->token($this->user('operador', 'ops'));
-        $company = Company::create(['nombre' => 'Empresa Roles', 'nit' => 'ROL-1', 'cuenta_id' => (string) $this->account($this->customer('roles'))->id, 'miembros' => []]);
+        $mixed = $this->token($this->user('mixto', 'mix'));
+        $corporate = $this->token($this->user('corporativo', 'corp'));
         $user = ['name' => 'Nueva', 'email' => 'nueva@example.test', 'password' => 'ClaveSegura2026'];
-        $this->postJson('/api/v1/usuarios', $user + ['role' => 'operador'], $this->headers($operator))->assertForbidden();
-        $this->postJson('/api/v1/usuarios', $user + ['role' => 'gerente'], $this->headers())->assertUnprocessable()->assertJsonValidationErrors('role');
-        $this->postJson('/api/v1/usuarios', $user + ['role' => 'empresa'], $this->headers())->assertUnprocessable()->assertJsonPath('errors.empresa_id.0', 'Selecciona la empresa que representará este usuario.');
-        $created = $this->postJson('/api/v1/usuarios', $user + ['role' => 'empresa', 'empresa_id' => (string) $company->id], $this->headers())->assertCreated()->json('data');
-        self::assertContains($created['id'], $company->refresh()->miembros);
-        $this->patchJson('/api/v1/usuarios/'.$created['id'], ['role' => 'operador', 'active' => true], $this->headers())->assertOk();
-        self::assertNotContains($created['id'], $company->refresh()->miembros);
-        self::assertNull(User::find($created['id'])->empresa_id);
-        foreach (['/api/v1/movimientos', '/api/v1/reportes/transacciones', '/api/v1/reportes/opciones'] as $path) {
-            $this->getJson($path, $this->headers($operator))->assertOk();
+        foreach ([$operator, $mixed, $corporate] as $token) {
+            $this->postJson('/api/v1/usuarios', $user + ['role' => 'operador'], $this->headers($token))->assertForbidden();
+            foreach (['/api/v1/usuarios', '/api/v1/integraciones', '/api/v1/bitacora', '/api/v1/seguridad'] as $path) {
+                $this->getJson($path, $this->headers($token))->assertForbidden();
+            }
         }
-        foreach (['/api/v1/clientes', '/api/v1/cuentas', '/api/v1/solicitudes', '/api/v1/usuarios', '/api/v1/dashboard', '/api/v1/planillas'] as $path) {
+        $this->postJson('/api/v1/usuarios', $user + ['role' => 'empresa'], $this->headers())->assertUnprocessable()->assertJsonValidationErrors('role');
+        foreach (['mixto', 'operador', 'corporativo'] as $i => $role) {
+            $this->postJson('/api/v1/usuarios', ['email' => "rol{$i}@example.test"] + $user + ['role' => $role], $this->headers())->assertCreated()->assertJsonPath('data.role', $role);
+        }
+
+        // Operaciones: operador and mixto; never corporativo.
+        foreach (['/api/v1/dashboard', '/api/v1/solicitudes', '/api/v1/cuentas', '/api/v1/creditos', '/api/v1/tarjetas', '/api/v1/movimientos', '/api/v1/reportes/transacciones'] as $path) {
+            $this->getJson($path, $this->headers($operator))->assertOk();
+            $this->getJson($path, $this->headers($mixed))->assertOk();
+            $this->getJson($path, $this->headers($corporate))->assertForbidden();
+        }
+        // Banca corporativa: corporativo and mixto; never operador.
+        foreach (['/api/v1/empresas', '/api/v1/colaboradores', '/api/v1/planillas', '/api/v1/colaboradores/candidatos'] as $path) {
+            $this->getJson($path, $this->headers($corporate))->assertOk();
+            $this->getJson($path, $this->headers($mixed))->assertOk();
             $this->getJson($path, $this->headers($operator))->assertForbidden();
         }
-        $this->postJson('/api/v1/cobros/ejecutar', [], $this->headers($operator))->assertForbidden();
+        $this->getJson('/api/v1/reportes/planillas?empresa_id=0123456789abcdef01234567', $this->headers($operator))->assertForbidden();
+
+        // The corporate role manages companies end to end: company, account, its users and its funding.
+        $company = $this->postJson('/api/v1/empresas', ['nombre' => 'Rol Corporativo', 'razon_social' => 'Rol Corporativo, S.A.', 'nit' => '5566778'], $this->headers($corporate))->assertCreated()->json('data');
+        $member = $this->postJson('/api/v1/empresas/'.$company['id'].'/usuarios', ['nombre' => 'Pagos', 'correo' => 'pagos@rol.test', 'contrasena' => 'PagosEmpresa2026'], $this->headers($corporate))->assertCreated()->json('data');
+        $this->postJson('/api/v1/empresas/'.$company['id'].'/usuarios/'.$member['id'].'/contrasena', ['contrasena' => 'OtraClaveEmpresa26'], $this->headers($corporate))->assertOk();
+        $this->patchJson('/api/v1/empresas/'.$company['id'].'/usuarios/'.$member['id'], ['activo' => false], $this->headers($corporate))->assertOk()->assertJsonPath('data.active', false);
+        $staff = User::where('role', 'operador')->first();
+        $this->patchJson('/api/v1/empresas/'.$company['id'].'/usuarios/'.$staff->id, ['activo' => false], $this->headers($corporate))->assertForbidden();
+        $this->postJson('/api/v1/empresas/'.$company['id'].'/fondeos', ['cuenta_id' => $company['cuenta_id'], 'tipo' => 'deposito', 'monto' => '2500.00', 'concepto' => 'Fondeo corporativo'], $this->headers($corporate))->assertCreated();
+        $personal = $this->account($this->customer('ajena'), 0);
+        $this->postJson('/api/v1/empresas/'.$company['id'].'/fondeos', ['cuenta_id' => (string) $personal->id, 'tipo' => 'deposito', 'monto' => '1.00', 'concepto' => 'Intento'], $this->headers($corporate))->assertUnprocessable();
+        $this->postJson('/api/v1/caja', ['cuenta_id' => (string) $personal->id, 'tipo' => 'deposito', 'monto' => '1.00', 'concepto' => 'Intento'], $this->headers($corporate))->assertForbidden();
+        $this->postJson('/api/v1/empresas/'.$company['id'].'/usuarios', ['nombre' => 'X', 'correo' => 'x@rol.test', 'contrasena' => 'PagosEmpresa2026'], $this->headers($operator))->assertForbidden();
+        self::assertSame(250000, Account::findOrFail($company['cuenta_id'])->saldo_centavos);
+    }
+
+    public function test_the_original_administrator_cannot_be_changed_by_anyone_else(): void
+    {
+        $this->admin->update(['protegido' => true]);
+        $second = $this->user('administrador', 'second-admin');
+        $token = $this->token($second);
+        $this->patchJson('/api/v1/usuarios/'.$this->admin->id, ['role' => 'operador', 'active' => false], $this->headers($token))->assertForbidden()->assertJsonPath('code', 'ADMIN_PROTECTED');
+        $this->postJson('/api/v1/usuarios/'.$this->admin->id.'/contrasena', ['contrasena' => 'OtraClaveAdmin2026'], $this->headers($token))->assertForbidden()->assertJsonPath('code', 'ADMIN_PROTECTED');
+        $this->postJson('/api/v1/usuarios/'.$this->admin->id.'/contrasena', ['contrasena' => 'OtraClaveAdmin2026'], $this->headers())->assertOk();
+        self::assertSame('administrador', $this->admin->refresh()->role);
+        self::assertTrue($this->admin->active);
+        self::assertNull(app(InstallService::class)->protectOriginalAdministrator(), 'Only one administrator is ever protected.');
     }
 
     public function test_customer_created_in_gestiones_gets_app_access_account_and_can_log_in_to_banca(): void

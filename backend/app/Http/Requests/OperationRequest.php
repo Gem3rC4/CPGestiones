@@ -16,7 +16,7 @@ class OperationRequest extends FormRequest
         $id = 'required|string|regex:/^[a-f0-9]{24}$/D';
         $money = ['required', 'string', 'regex:/^(0|[1-9][0-9]{0,9})(\.[0-9]{1,2})?$/D'];
         $scope = ['cliente_ref' => 'sometimes|string|max:100', 'dpi' => 'sometimes|string|regex:/^[0-9]{13}$/D'];
-        $roles = implode(',', array_keys(config('operations.roles')));
+        $roles = implode(',', config('operations.staff_roles'));
         $day = 'sometimes|nullable|integer|min:1|max:28';
 
         return match ($this->route()->getName()) {
@@ -43,6 +43,9 @@ class OperationRequest extends FormRequest
             // Corporate banking: the company gets its own account and, optionally, its representative user.
             'empresas.store' => ['nombre' => 'required|string|min:2|max:150', 'razon_social' => 'sometimes|required|string|min:3|max:200', 'representante_legal' => 'sometimes|nullable|string|max:150', 'nit' => ['required', 'string', 'max:20', 'regex:/^[0-9]{1,12}-?[0-9Kk]$/D'], 'cuenta_id' => 'sometimes|nullable|string|regex:/^[a-f0-9]{24}$/D', 'correo' => 'sometimes|nullable|email|max:180', 'telefono' => 'sometimes|nullable|string|max:20', 'direccion' => 'sometimes|nullable|string|max:200', 'producto_cuenta' => 'sometimes|nullable|in:ahorro,monetaria',
                 'representante_nombre' => 'required_with:representante_correo|nullable|string|max:150', 'representante_correo' => 'sometimes|nullable|email|max:180', 'contrasena' => 'required_with:representante_correo|nullable|string|min:12|max:72|regex:/[A-Z]/|regex:/[a-z]/|regex:/[0-9]/'],
+            'empresas.usuarios.contrasena' => ['contrasena' => 'required|string|min:12|max:72|regex:/[A-Z]/|regex:/[a-z]/|regex:/[0-9]/'],
+            'empresas.usuarios.estado' => ['activo' => 'required|boolean'],
+            'empresas.fondeos' => ['cuenta_id' => $id, 'tipo' => 'required|in:deposito,retiro', 'monto' => $money, 'concepto' => 'required|string|min:3|max:160'],
             'empresas.cuentas' => ['producto' => 'required|in:ahorro,monetaria', 'nombre' => 'sometimes|nullable|string|max:100'],
             'empresas.usuarios' => ['nombre' => 'required|string|max:150', 'correo' => 'required|email|max:180', 'contrasena' => 'required|string|min:12|max:72|regex:/[A-Z]/|regex:/[a-z]/|regex:/[0-9]/'],
             'planillas.store' => ['empresa_id' => $id, 'nombre' => 'required|string|max:120', 'pagos' => 'required|array|min:1|max:500', 'pagos.*.cuenta_id' => 'sometimes|string|regex:/^[a-f0-9]{24}$/D', 'pagos.*.cuenta_numero' => 'required_without_all:pagos.*.cuenta_id,pagos.*.colaborador_id|string|max:30', 'pagos.*.nombre' => 'required|string|max:150', 'pagos.*.monto' => $money, 'pagos.*.puesto' => 'sometimes|string|max:80', 'pagos.*.colaborador_id' => 'sometimes|string|regex:/^[a-f0-9]{24}$/D'],
@@ -62,7 +65,7 @@ class OperationRequest extends FormRequest
     {
         $passwords = match ($this->route()?->getName()) {
             'clientes.contrasena', 'clientes.store' => BankRegistrationRequest::passwordMessages('contrasena'),
-            'usuarios.contrasena', 'empresas.store', 'empresas.usuarios' => ['contrasena.min' => 'Usa al menos 12 caracteres.', 'contrasena.regex' => 'Incluye al menos una mayúscula, una minúscula y un número.'],
+            'usuarios.contrasena', 'empresas.store', 'empresas.usuarios', 'empresas.usuarios.contrasena' => ['contrasena.min' => 'Usa al menos 12 caracteres.', 'contrasena.regex' => 'Incluye al menos una mayúscula, una minúscula y un número.'],
             default => [],
         };
 

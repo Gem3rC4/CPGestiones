@@ -80,7 +80,11 @@ Route::prefix('v1')->group(function () {
         $post('/empresas', PayrollController::class, 'company', 'empresas.store', 'empresas.write');
         Route::get('/empresas/{id}', [PayrollController::class, 'companyDetail'])->middleware('permit:empresas.read')->where('id', '[a-f0-9]{24}');
         $post('/empresas/{id}/cuentas', PayrollController::class, 'companyAccount', 'empresas.cuentas', 'empresas.write');
-        $post('/empresas/{id}/usuarios', PayrollController::class, 'companyUser', 'empresas.usuarios', 'usuarios.write');
+        $post('/empresas/{id}/usuarios', PayrollController::class, 'companyUser', 'empresas.usuarios', 'empresas.usuarios');
+        $post('/empresas/{id}/usuarios/{userId}/contrasena', PayrollController::class, 'companyUserPassword', 'empresas.usuarios.contrasena', 'empresas.usuarios');
+        Route::patch('/empresas/{id}/usuarios/{userId}', [PayrollController::class, 'companyUserState'])->name('empresas.usuarios.estado')->middleware('permit:empresas.usuarios');
+        $post('/empresas/{id}/fondeos', PayrollController::class, 'companyFunding', 'empresas.fondeos', 'empresas.fondeo');
+        Route::get('/colaboradores/candidatos', [PayrollController::class, 'candidates'])->middleware('permit:colaboradores.write');
         $post('/planillas', PayrollController::class, 'store', 'planillas.store', 'planillas.write');
         $post('/colaboradores', PayrollController::class, 'collaborator', 'colaboradores.store', 'colaboradores.write');
         Route::get('/creditos/{id}', [CreditController::class, 'show'])->middleware('permit:creditos.read')->where('id', '[a-f0-9]{24}');

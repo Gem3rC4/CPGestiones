@@ -194,7 +194,7 @@ final class EcosystemTest extends TestCase
         $body = ['version' => 1, 'estado' => 'emitida', 'nota' => 'Evaluación final del operador', 'dia_corte' => 10, 'dia_pago' => 28, 'cuenta_id' => (string) $account->id];
         $this->postJson($path, $body, $this->headers($this->manager))->assertUnprocessable();
         $this->postJson($path, $body + ['limite_asignado' => '8500.01'], $this->headers($this->manager))->assertUnprocessable()->assertJsonPath('code', 'RISK_LIMIT_EXCEEDED');
-        foreach (['operador', 'empresa'] as $role) {
+        foreach (['corporativo', 'empresa'] as $role) {
             $this->postJson($path, $body + ['limite_asignado' => '8000.00'], $this->headers($this->staffToken($role)))->assertForbidden();
         }
         $this->postJson($path, $body + ['limite_asignado' => '8000.00', 'cliente_ref' => 'banca-1'], $this->headers())->assertForbidden();
@@ -255,7 +255,7 @@ final class EcosystemTest extends TestCase
         $other = $this->staffToken('administrador');
         $this->getJson('/api/v1/alertas', $this->headers())->assertForbidden();
         $this->getJson('/api/v1/alertas', $this->headers($this->staffToken('empresa')))->assertForbidden();
-        $this->getJson('/api/v1/alertas', $this->headers($this->staffToken('operador')))->assertForbidden();
+        $this->getJson('/api/v1/alertas', $this->headers($this->staffToken('corporativo')))->assertForbidden();
         $this->getJson('/api/v1/alertas', $this->headers($this->manager))->assertOk()->assertJsonPath('data.sin_leer', 1)->assertJsonMissingPath('data.alertas.data.0.leida_por');
         app(AlertService::class)->publish('customer-2', 'clientes.read', 'Otro cliente', 'Un registro posterior');
         $this->postJson('/api/v1/alertas/leidas', ['ids' => [(string) $first->id]], $this->headers($this->manager))->assertOk();

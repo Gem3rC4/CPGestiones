@@ -27,6 +27,7 @@ Artisan::command('cp:install', function (InstallService $service) {
         'Conciliación con la concentradora' => fn () => $service->reconcileMasterAccount(),
         'Limpieza de datos de prueba corporativos' => fn () => $service->purgeCorporateDemo(),
         'Migración de roles' => fn () => $service->migrateRoles(),
+        'Administrador protegido' => fn () => $service->protectOriginalAdministrator(),
         'Cuentas de empresas' => fn () => $service->migrateCompanyAccounts(),
     ];
     foreach ($steps as $name => $step) {
@@ -69,7 +70,7 @@ Artisan::command('cp:bootstrap-admin', function () {
 
         return 1;
     }
-    User::create(['email' => mb_strtolower(trim($admin['email'])), 'name' => $admin['name'], 'role' => 'administrador', 'active' => true, 'failed_attempts' => 0, 'password' => Hash::make($admin['password'])]);
+    User::create(['email' => mb_strtolower(trim($admin['email'])), 'name' => $admin['name'], 'role' => 'administrador', 'active' => true, 'failed_attempts' => 0, 'protegido' => true, 'password' => Hash::make($admin['password'])]);
     $this->info('Administrador inicial creado. Ya puedes quitar INITIAL_ADMIN_PASSWORD del servidor.');
 })->purpose('Crear el primer administrador desde variables de entorno, solo si no existe ninguno.');
 Artisan::command('cp:token {client}', function (AuthService $service) {

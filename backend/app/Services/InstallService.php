@@ -163,6 +163,21 @@ class InstallService
     }
 
     /**
+     * The original administrator (the first one created) is protected: nobody else can change its role,
+     * deactivate it or reset its password. Idempotent.
+     */
+    public function protectOriginalAdministrator(): ?string
+    {
+        if (User::where('protegido', true)->exists()) {
+            return null;
+        }
+        $admin = User::where('role', 'administrador')->where('active', true)->orderBy('created_at')->first();
+        $admin?->update(['protegido' => true]);
+
+        return $admin?->email;
+    }
+
+    /**
      * Earlier versions had seven roles; the project now defines three. Runs on every start and is idempotent.
      */
     public function migrateRoles(): int

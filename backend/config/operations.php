@@ -28,14 +28,21 @@ return [
     // Reference exchange rate (external API). Banguat publishes the official rate; the second source is a fallback.
     'exchange' => ['banguat_url' => env('BANGUAT_URL', 'https://www.banguat.gob.gt/variables/ws/TipoCambio.asmx'), 'fallback_url' => env('EXCHANGE_FALLBACK_URL', 'https://open.er-api.com/v6/latest/USD'), 'cache_minutes' => 60],
     /*
-     * Three roles (project requirement):
-     * - administrador: full control; the only one who creates users and assigns roles.
-     * - operador: Operations module only, to download customer transactions and generate reports.
-     * - empresa: representative of ONE company (usuarios.empresa_id); loads, approves and downloads its payrolls.
+     * Role matrix. The panel shows three modules: Operaciones, Banca corporativa and Administración
+     * (customers, bank users, products, logs and integrations). Every API route also checks its permission.
+     * - administrador: everything (the original administrator is protected, see usuarios.protegido).
+     * - mixto: Operaciones + Banca corporativa. Creates company users, never bank users.
+     * - operador: Operaciones only (inbox, accounts, loans, cards, transactions, reports).
+     * - corporativo: Banca corporativa only (companies, their users and accounts, collaborators, payroll).
+     * - empresa: representative of ONE company (usuarios.empresa_id), created inside Banca corporativa.
      */
     'roles' => [
         'administrador' => ['*'],
-        'operador' => ['movimientos.read', 'reportes.cuentas', 'reportes.transacciones', 'reportes.planillas'],
-        'empresa' => ['empresas.read', 'colaboradores.read', 'planillas.read', 'planillas.write', 'planillas.approve', 'reportes.planillas'],
+        'mixto' => ['modulo.operaciones', 'dashboard.read', 'solicitudes.read', 'solicitudes.manage', 'clientes.read', 'productos.read', 'cuentas.read', 'cuentas.write', 'cuentas.manage', 'dinero.write', 'caja.write', 'creditos.read', 'creditos.pay', 'cobros.run', 'tarjetas.read', 'tarjetas.write', 'movimientos.read', 'reportes.cuentas', 'reportes.transacciones', 'modulo.corporativo', 'empresas.read', 'empresas.write', 'empresas.usuarios', 'empresas.fondeo', 'colaboradores.read', 'colaboradores.write', 'planillas.read', 'planillas.write', 'planillas.approve', 'reportes.planillas'],
+        'operador' => ['modulo.operaciones', 'dashboard.read', 'solicitudes.read', 'solicitudes.manage', 'clientes.read', 'productos.read', 'cuentas.read', 'cuentas.write', 'cuentas.manage', 'dinero.write', 'caja.write', 'creditos.read', 'creditos.pay', 'cobros.run', 'tarjetas.read', 'tarjetas.write', 'movimientos.read', 'reportes.cuentas', 'reportes.transacciones'],
+        'corporativo' => ['modulo.corporativo', 'empresas.read', 'empresas.write', 'empresas.usuarios', 'empresas.fondeo', 'colaboradores.read', 'colaboradores.write', 'planillas.read', 'planillas.write', 'planillas.approve', 'reportes.planillas'],
+        'empresa' => ['modulo.corporativo', 'empresas.read', 'colaboradores.read', 'planillas.read', 'planillas.write', 'planillas.approve', 'reportes.planillas'],
     ],
+    // Roles an administrator can assign to bank users (empresa users are created inside each company).
+    'staff_roles' => ['administrador', 'mixto', 'operador', 'corporativo'],
 ];

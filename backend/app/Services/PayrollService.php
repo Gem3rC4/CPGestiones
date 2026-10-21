@@ -14,13 +14,14 @@ use Illuminate\Support\Facades\DB;
 class PayrollService
 {
     /**
-     * The "empresa" role only works with the company it represents; the administrator works with all.
+     * A company representative (role empresa) only works with the company it represents; bank staff with
+     * access to Banca corporativa (administrador, mixto, corporativo) work with every company.
      */
     public function authorizeCompany(string $id, string $actor): Company
     {
         $company = Company::findOrFail($id);
         $user = User::findOrFail($actor);
-        if ($user->role !== 'administrador' && $user->empresa_id !== (string) $company->id) {
+        if ($user->role === 'empresa' && $user->empresa_id !== (string) $company->id) {
             throw new BusinessException('No tienes acceso a esta empresa.', 'FORBIDDEN', 403);
         }
 

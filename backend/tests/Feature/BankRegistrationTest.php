@@ -374,7 +374,7 @@ final class BankRegistrationTest extends TestCase
 
         $approve($personal, ['estado' => 'rechazada'], 'ap-04')->assertConflict()->assertJsonPath('code', 'INVALID_STATE');
         $approve($personal, ['estado' => 'emitida', 'limite_asignado' => '30000.01'] + $loanTerms, 'ap-05')->assertUnprocessable()->assertJsonPath('code', 'RISK_LIMIT_EXCEEDED');
-        $approve($personal, ['estado' => 'emitida', 'limite_asignado' => '25000.00'] + $loanTerms, 'ap-06', $this->staff('operador'))->assertForbidden();
+        $approve($personal, ['estado' => 'emitida', 'limite_asignado' => '25000.00'] + $loanTerms, 'ap-06', $this->staff('corporativo'))->assertForbidden();
         $approve($personal, ['estado' => 'emitida', 'limite_asignado' => '25000.00', 'dpi' => '3068226670601'], 'ap-07', $this->token)->assertForbidden();
         $approve($personal, ['estado' => 'emitida', 'limite_asignado' => '25000.00'], 'ap-08a')->assertUnprocessable()->assertJsonPath('code', 'LOAN_TERMS_REQUIRED');
         $approve($personal, ['estado' => 'emitida', 'limite_asignado' => '25000.00'] + $loanTerms, 'ap-08')->assertOk()->assertJsonPath('data.estado', 'emitida')->assertJsonPath('data.limite_asignado_centavos', 2500000);

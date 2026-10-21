@@ -53,7 +53,7 @@ class ReportController extends ApiController
         $paid = $rows->where('estado', 'pagada');
 
         return $this->ok($this->envelope($r, 'Pago de planillas', $f) + [
-            'empresa' => ['id' => (string) $company->id, 'nombre' => $company->nombre, 'nit' => $company->nit, 'cuenta_numero' => $company->cuenta_numero ?? Account::find($company->cuenta_id)?->numero],
+            'empresa' => ['id' => (string) $company->id, 'nombre' => $company->nombre, 'razon_social' => $company->razon_social ?? $company->nombre, 'representante_legal' => $company->representante_legal, 'nit' => $company->nit, 'cuenta_numero' => $company->cuenta_numero ?? Account::find($company->cuenta_id)?->numero],
             'planillas' => $rows->values(),
             'totales' => ['planillas' => $rows->count(), 'pagadas' => $paid->count(), 'pagado_centavos' => $paid->sum('total_centavos'), 'pendiente_centavos' => $rows->where('estado', '!=', 'pagada')->sum('total_centavos'), 'beneficiarios' => $rows->sum('beneficiarios')],
         ]);

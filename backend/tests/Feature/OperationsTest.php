@@ -780,10 +780,11 @@ final class OperationsTest extends TestCase
     {
         $person = $this->customer('persona');
         $personal = $this->account($person, 0);
-        $body = ['nombre' => 'Distribuidora Norte S.A.', 'nit' => '7788990', 'correo' => 'pagos@norte.test', 'producto_cuenta' => 'monetaria', 'representante_nombre' => 'Lucía Norte', 'representante_correo' => 'lucia@norte.test'];
+        $body = ['nombre' => 'Distribuidora Norte S.A.', 'razon_social' => 'Comercializadora del Norte, S.A.', 'representante_legal' => 'Ana Norte', 'nit' => '7788990', 'correo' => 'pagos@norte.test', 'producto_cuenta' => 'monetaria', 'representante_nombre' => 'Lucía Norte', 'representante_correo' => 'lucia@norte.test'];
         $this->postJson('/api/v1/empresas', $body + ['contrasena' => 'corta'], $this->headers())->assertUnprocessable()->assertJsonValidationErrors('contrasena');
+        $this->postJson('/api/v1/empresas', ['nit' => 'NIT 123'] + $body + ['contrasena' => 'RepresentanteNorte2026'], $this->headers())->assertUnprocessable()->assertJsonPath('errors.nit.0', 'Escribe el NIT sin espacios, por ejemplo 1234567-8 o 1234567K.');
         $company = $this->postJson('/api/v1/empresas', $body + ['contrasena' => 'RepresentanteNorte2026'], $this->headers())->assertCreated()
-            ->assertJsonPath('data.cuentas.0.tipo', 'monetaria')->assertJsonPath('data.representantes.0.email', 'lucia@norte.test')->json('data');
+            ->assertJsonPath('data.cuentas.0.tipo', 'monetaria')->assertJsonPath('data.razon_social', 'Comercializadora del Norte, S.A.')->assertJsonPath('data.representante_legal', 'Ana Norte')->assertJsonPath('data.representantes.0.email', 'lucia@norte.test')->json('data');
         $this->postJson('/api/v1/empresas', $body + ['contrasena' => 'RepresentanteNorte2026'], $this->headers())->assertConflict();
         $id = $company['id'];
         $extra = $this->postJson('/api/v1/empresas/'.$id.'/cuentas', ['producto' => 'ahorro', 'nombre' => 'Reserva'], $this->headers())->assertCreated()->json('data');

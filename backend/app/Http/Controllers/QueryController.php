@@ -36,7 +36,7 @@ class QueryController extends ApiController
      * Text search (q) looks in these fields; resources with a customer also match the customer's name.
      */
     private const SEARCH = ['usuarios' => ['name', 'email', 'role'], 'clientes' => ['nombre', 'email', 'nit', 'telefono'], 'productos' => ['name', 'code', 'type'], 'cuentas' => ['numero', 'nombre', 'tipo'],
-        'solicitudes' => ['folio', 'producto', 'gestion_ref'], 'creditos' => ['referencia', 'producto'], 'tarjetas' => ['referencia', 'ultimos_cuatro', 'producto'], 'empresas' => ['nombre', 'nit'],
+        'solicitudes' => ['folio', 'producto', 'gestion_ref'], 'creditos' => ['referencia', 'producto'], 'tarjetas' => ['referencia', 'ultimos_cuatro', 'producto'], 'empresas' => ['nombre', 'razon_social', 'nit', 'representante_legal'],
         'planillas' => ['nombre', 'empresa_nombre'], 'bitacora' => ['action', 'note', 'actor'], 'seguridad' => ['action', 'actor', 'ip'], 'movimientos' => ['concepto', 'tipo'], 'colaboradores' => ['nombre', 'puesto', 'cuenta_numero', 'empresa_nombre']];
 
     /**

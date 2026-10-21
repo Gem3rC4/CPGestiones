@@ -21,7 +21,7 @@ function header(doc, report, subtitle, lines) {
   let y = 114
   for (const line of [subtitle, ...lines].filter(Boolean)) { doc.text(line, 40, y); y += 14 }
   const rate = report.tipo_cambio
-  if (rate?.quetzales_por_dolar) { doc.text(`Tipo de cambio de referencia: Q ${Number(rate.quetzales_por_dolar).toFixed(5)} por US$1 (${rate.fuente}, ${rate.fecha}${rate.desactualizado ? ', último conocido' : ''})`, 40, y); y += 14 }
+  if (rate?.quetzales_por_dolar) { doc.text(`Tipo de cambio de referencia: 1 Dólar (USD) = Q ${Number(rate.quetzales_por_dolar).toFixed(5)} Quetzales (GTQ) · ${rate.fuente}, ${rate.fecha}${rate.desactualizado ? ' (último conocido)' : ''}`, 40, y); y += 14 }
   doc.setTextColor(...INK)
   return y + 8
 }
@@ -43,7 +43,7 @@ const range = f => f?.desde || f?.hasta ? `Período: ${onDay(f.desde) || 'inicio
 export async function payrollPdf(report) {
   const { jsPDF, autoTable } = await libraries()
   const doc = new jsPDF({ unit: 'pt', format: 'letter' })
-  let y = header(doc, report, `${report.empresa.nombre} · NIT ${report.empresa.nit} · Cuenta de planillas ${report.empresa.cuenta_numero || '—'}`, [range(report.filtros), report.filtros?.estado ? `Estado: ${label(report.filtros.estado)}` : ''])
+  let y = header(doc, report, `${report.empresa.nombre}${report.empresa.razon_social && report.empresa.razon_social !== report.empresa.nombre ? ` (${report.empresa.razon_social})` : ''} · NIT ${report.empresa.nit} · Cuenta de planillas ${report.empresa.cuenta_numero || '—'}`, [range(report.filtros), report.filtros?.estado ? `Estado: ${label(report.filtros.estado)}` : ''])
   const t = report.totales, rate = report.tipo_cambio
   y = totals(doc, autoTable, y, [['Planillas', `${t.planillas} (${t.pagadas} pagadas)`], ['Total pagado', money(t.pagado_centavos) + usd(t.pagado_centavos, rate)], ['Pendiente de autorizar', money(t.pendiente_centavos)], ['Pagos a colaboradores', String(t.beneficiarios)]])
   for (const payroll of report.planillas) {

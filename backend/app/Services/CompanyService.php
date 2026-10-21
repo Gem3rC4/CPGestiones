@@ -22,10 +22,11 @@ class CompanyService
 
     public function create(array $d, string $actor): array
     {
-        if (Company::where('nit', $d['nit'])->exists()) {
+        if (Company::where('nit', mb_strtoupper($d['nit']))->exists()) {
             throw new BusinessException('Ya existe una empresa con ese NIT.', 'COMPANY_EXISTS', 409);
         }
-        $company = Company::create(array_filter(['nombre' => $d['nombre'], 'nit' => $d['nit'], 'correo' => $d['correo'] ?? null, 'telefono' => $d['telefono'] ?? null, 'direccion' => $d['direccion'] ?? null]) + ['miembros' => [], 'segmento' => 'empresarial']);
+        // "nombre" is the trade name shown everywhere; razon_social is the legal name for statements and reports.
+        $company = Company::create(array_filter(['nombre' => $d['nombre'], 'razon_social' => $d['razon_social'] ?? $d['nombre'], 'nit' => mb_strtoupper($d['nit']), 'representante_legal' => $d['representante_legal'] ?? null, 'correo' => $d['correo'] ?? null, 'telefono' => $d['telefono'] ?? null, 'direccion' => $d['direccion'] ?? null]) + ['miembros' => [], 'segmento' => 'empresarial']);
         $account = $this->openAccount((string) $company->id, ['producto' => $d['producto_cuenta'] ?? 'monetaria', 'nombre' => 'Cuenta de planillas'], $actor);
         $company->update(['cuenta_id' => $account['id'], 'cuenta_numero' => $account['numero']]);
         $representative = null;

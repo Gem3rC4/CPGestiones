@@ -3,13 +3,15 @@
 namespace App\Services;
 
 use App\Models\Account;
+use App\Models\CardApplication;
+use App\Models\Collaborator;
 use App\Models\Company;
 use App\Models\Customer;
 use App\Models\Movement;
+use App\Models\Payroll;
 use App\Models\Product;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
 use MongoDB\Driver\Exception\CommandException;
 
 class InstallService
@@ -17,7 +19,7 @@ class InstallService
     public function indexes(): void
     {
         $db = DB::connection('mongodb')->getDatabase();
-        foreach (['usuarios', 'tokens', 'clientes', 'productos', 'cuentas', 'movimientos', 'idempotencias', 'solicitudes', 'tarjetas', 'estados_cuenta', 'empresas', 'planillas', 'devengos', 'bitacora', 'seguridad', 'eventos_salida', 'sesiones_clientes', 'alertas', 'eventos_entrada', 'evaluaciones_riesgo', 'creditos', 'pagos_servicios', 'colaboradores', 'configuracion_integraciones'] as $collection) {
+        foreach (['usuarios', 'tokens', 'clientes', 'productos', 'cuentas', 'movimientos', 'idempotencias', 'solicitudes', 'tarjetas', 'estados_cuenta', 'empresas', 'planillas', 'devengos', 'bitacora', 'seguridad', 'eventos_salida', 'sesiones_clientes', 'alertas', 'eventos_entrada', 'evaluaciones_riesgo', 'creditos', 'pagos_servicios', 'colaboradores', 'configuracion_integraciones', 'sesiones_usuarios'] as $collection) {
             try {
                 $db->createCollection($collection);
             } catch (CommandException $e) {
@@ -56,6 +58,10 @@ class InstallService
             ['pagos_servicios', ['cliente_id' => 1, 'created_at' => -1], []], ['pagos_servicios', ['transaccion_id' => 1], ['unique' => true]],
             ['sesiones_clientes', ['cliente_id' => 1], []],
             ['colaboradores', ['empresa_id' => 1, 'puesto' => 1], []], ['configuracion_integraciones', ['sistema' => 1], ['unique' => true]],
+            ['colaboradores', ['cliente_id' => 1], []], ['creditos', ['estado' => 1], []], ['estados_cuenta', ['fecha_pago' => 1], []],
+            ['sesiones_usuarios', ['refresh_hash' => 1], ['unique' => true]], ['sesiones_usuarios', ['refresh_prev_hash' => 1], []],
+            ['sesiones_usuarios', ['user_id' => 1], []], ['sesiones_usuarios', ['expires_at' => 1], ['expireAfterSeconds' => 0]],
+            ['movimientos', ['created_at' => -1], []], ['usuarios', ['empresa_id' => 1], []],
         ];
         // external_ref used to be unique for every document; customers now may have no Banca reference.
         foreach ($db->selectCollection('clientes')->listIndexes() as $index) {
@@ -82,39 +88,82 @@ class InstallService
         foreach (['credito-personal' => 'Crédito Personal', 'credito-vehicular' => 'Crédito Vehicular', 'credito-hipotecario' => 'Préstamo Hipotecario'] as $code => $name) {
             Product::firstOrCreate(['code' => $code], ['name' => $name, 'type' => 'prestamo', 'active' => true, 'max_limit_cents' => null, 'annual_bps' => null]);
         }
-        foreach (['caja' => 'Caja de efectivo', 'comercios' => 'Liquidación de consumos', 'pagos_tarjeta' => 'Liquidación de pagos', 'intereses' => 'Gasto de intereses', 'servicios' => 'Liquidación de pago de servicios'] as $key => $name) {
+        foreach (['caja' => 'Caja de efectivo', 'comercios' => 'Liquidación de consumos', 'pagos_tarjeta' => 'Liquidación de pagos', 'intereses' => 'Gasto de intereses', 'servicios' => 'Liquidación de pago de servicios', 'capital' => 'Capital del banco', 'concentradora' => 'Cuenta Principal del Banco (concentradora)'] as $key => $name) {
             Account::firstOrCreate(['system_key' => $key], ['numero' => 'INTERNA-'.$key, 'nombre' => $name, 'tipo' => 'interna', 'moneda' => 'GTQ', 'saldo_centavos' => 0, 'estado' => 'activa']);
         }
     }
 
-    public function demo(string $password): void
+    /**
+     * The master (concentradora) account opens once with the bank's own funds, recorded as a movement from
+     * the capital account so every balance in the ledger still adds up to zero. Loans are disbursed from it.
+     */
+    public function fundMasterAccount(): void
     {
-        if (User::where('email', 'admin@cp.local')->exists()) {
-            throw new \RuntimeException('La demostración ya existe. No se sobrescribieron datos.');
+        $master = Account::where('system_key', 'concentradora')->firstOrFail();
+        if (Movement::where('cuenta_id', (string) $master->id)->where('tipo', 'apertura_fondos')->exists()) {
+            return;
         }
-        DB::transaction(function () use ($password) {
-            foreach (['admin' => 'administrador', 'gerente' => 'gerente', 'cajero' => 'cajero', 'auditor' => 'auditor', 'operador' => 'empresa_operador', 'aprobador' => 'empresa_aprobador'] as $name => $role) {
-                User::create(['name' => ucfirst($name).' de demostración', 'email' => $name.'@cp.local', 'password' => Hash::make($password), 'role' => $role, 'active' => true, 'failed_attempts' => 0]);
-            }
-            $names = ['Ana Lucía Méndez', 'Carlos Estuardo López', 'María Fernanda Ruiz', 'Diego Alejandro Soto', 'Sofía Isabel Pérez', 'Comercial Los Pinos'];
-            $accounts = [];
+        DB::connection('mongodb')->transaction(function () use ($master): void {
+            $capital = Account::where('system_key', 'capital')->firstOrFail();
+            app(AccountService::class)->move((string) $capital->id, (string) $master->id, (int) config('operations.master_account_opening_cents'), 'sistema:instalacion', 'Fondos iniciales de la cuenta concentradora', 'apertura_fondos');
+        }, attempts: 5);
+    }
+
+    /**
+     * Earlier versions had seven roles; the project now defines three. Runs on every start and is idempotent.
+     */
+    public function migrateRoles(): int
+    {
+        $changed = 0;
+        foreach (User::whereNotIn('role', array_keys(config('operations.roles')))->get() as $user) {
+            $company = str_starts_with((string) $user->role, 'empresa') ? Company::where('miembros', (string) $user->id)->first() : null;
+            $user->update($company ? ['role' => 'empresa', 'empresa_id' => (string) $company->id] : ['role' => 'operador']);
+            app(AuthService::class)->closeUserSessions((string) $user->id);
+            $changed++;
+        }
+
+        return $changed;
+    }
+
+    /**
+     * Removes the fictitious corporate data the old "Cargar datos de prueba" button created (marked demo=true).
+     * Money left in those accounts is first returned to the cash account so the ledger stays balanced.
+     *
+     * @return array{empresas: int, colaboradores: int, clientes: int, cuentas: int, usuarios: int}
+     */
+    public function purgeCorporateDemo(): array
+    {
+        $companies = Company::where('demo', true)->get()->map(fn ($c) => (string) $c->id)->all();
+        $customers = Customer::where('demo', true)->get()->map(fn ($c) => (string) $c->id)->all();
+        $users = User::where('demo', true)->get()->map(fn ($u) => (string) $u->id)->all();
+        if ($companies === [] && $customers === [] && $users === [] && ! Collaborator::where('demo', true)->exists()) {
+            return ['empresas' => 0, 'colaboradores' => 0, 'clientes' => 0, 'cuentas' => 0, 'usuarios' => 0];
+        }
+
+        return DB::connection('mongodb')->transaction(function () use ($companies, $customers, $users): array {
             $vault = Account::where('system_key', 'caja')->firstOrFail();
-            $vault->update(['saldo_centavos' => 100000000]);
-            Movement::create(['transaccion_id' => 'apertura-demo', 'cuenta_id' => (string) $vault->id, 'importe_centavos' => 100000000, 'saldo_centavos' => 100000000, 'tipo' => 'apertura_demo', 'concepto' => 'Fondos ficticios de la demostración']);
-            foreach ($names as $i => $name) {
-                $c = Customer::create(['nombre' => $name, 'email' => 'cliente'.($i + 1).'@example.test', 'dpi' => '99999999'.str_pad((string) $i, 5, '0', STR_PAD_LEFT), 'nit' => 'DEMO-'.($i + 1), 'telefono' => '5555000'.$i, 'external_ref' => 'demo-'.($i + 1), 'ingreso_centavos' => 1200000 + $i * 100000, 'deuda_centavos' => 100000]);
-                $a = app(AccountService::class)->open(['cliente_id' => (string) $c->id, 'producto' => $i === 5 ? 'monetaria' : 'ahorro'], 'seed:demo');
-                $id = (string) ($a['id'] ?? $a['_id']);
-                $accounts[] = $id;
-                app(AccountService::class)->move((string) $vault->id, $id, ($i + 1) * 250000, 'seed:demo', 'Depósito ficticio inicial', 'deposito_demo');
-                if ($i < 4) {
-                    app(ApplicationService::class)->create(['cliente_id' => (string) $c->id, 'producto' => ['credito-clasica', 'credito-oro', 'credito-clasica', 'credito-platino'][$i], 'limite_solicitado' => ['12000.00', '25000.00', '8500.00', '50000.00'][$i]], 'seed:demo');
+            $accounts = Account::whereIn('cliente_id', $customers)->get();
+            foreach ($accounts as $account) {
+                if ($account->saldo_centavos > 0) {
+                    $account->update(['estado' => 'activa']);
+                    app(AccountService::class)->move((string) $account->id, (string) $vault->id, (int) $account->saldo_centavos, 'sistema:limpieza', 'Reverso de datos de prueba corporativos', 'reverso_demo');
                 }
             }
-            $users = User::whereIn('role', ['empresa_operador', 'empresa_aprobador'])->get()->map(fn ($u) => (string) $u->id)->all();
-            $company = Company::create(['nombre' => 'Comercial Los Pinos', 'nit' => 'DEMO-EMPRESA', 'cuenta_id' => $accounts[5], 'miembros' => $users]);
-            $op = User::where('role', 'empresa_operador')->first();
-            app(PayrollService::class)->create(['empresa_id' => (string) $company->id, 'nombre' => 'Planilla de ejemplo', 'pagos' => [['cuenta_id' => $accounts[0], 'nombre' => $names[0], 'monto' => '1500.00'], ['cuenta_id' => $accounts[1], 'nombre' => $names[1], 'monto' => '2000.00']]], (string) $op->id);
-        });
+            $accountIds = $accounts->map(fn ($a) => (string) $a->id)->all();
+            Movement::whereIn('cuenta_id', $accountIds)->delete();
+            Account::whereIn('_id', $accountIds)->delete();
+            Payroll::whereIn('empresa_id', $companies)->delete();
+            $collaborators = Collaborator::where('demo', true)->orWhereIn('empresa_id', $companies)->delete();
+            Company::whereIn('_id', $companies)->delete();
+            foreach ($users as $id) {
+                app(AuthService::class)->closeUserSessions($id);
+            }
+            User::whereIn('_id', $users)->delete();
+            // A demo customer that somehow got a real product is kept rather than leaving orphans.
+            $removable = array_values(array_filter($customers, fn (string $id): bool => ! CardApplication::where('cliente_id', $id)->exists()));
+            Customer::whereIn('_id', $removable)->delete();
+
+            return ['empresas' => count($companies), 'colaboradores' => (int) $collaborators, 'clientes' => count($removable), 'cuentas' => count($accountIds), 'usuarios' => count($users)];
+        }, attempts: 5);
     }
 }

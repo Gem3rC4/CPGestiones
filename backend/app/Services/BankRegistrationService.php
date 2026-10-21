@@ -172,6 +172,15 @@ class BankRegistrationService
         ];
     }
 
+    /**
+     * Profile returned to an authenticated customer session. It carries the full DPI because Banca Virtual
+     * uses it as the key of every other call, and a customer registered in Gestiones was never typed in the app.
+     */
+    public function sessionProfile(Customer $customer): array
+    {
+        return $this->profile($customer) + ['dpi' => $customer->dpi];
+    }
+
     public function accountView(array $account): array
     {
         $number = $account['numero'];

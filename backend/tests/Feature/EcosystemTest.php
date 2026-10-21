@@ -46,7 +46,7 @@ final class EcosystemTest extends TestCase
         $this->travelTo(CarbonImmutable::parse('2026-10-07 12:00:00', 'America/Guatemala'));
         $this->bank = app(AuthService::class)->issueService('banca');
         $this->risk = app(AuthService::class)->issueService('riesgos');
-        $this->manager = $this->staffToken('gerente');
+        $this->manager = $this->staffToken('administrador');
         $this->customer = Customer::create(['nombre' => 'Cliente de prueba', 'email' => 'cliente@example.test', 'dpi' => '1111111111111', 'external_ref' => 'banca-1', 'password' => Hash::make('PasswordSeguro123'), 'active' => true, 'failed_attempts' => 0]);
     }
 
@@ -190,10 +190,11 @@ final class EcosystemTest extends TestCase
     {
         $app = $this->received('credito-clasica');
         $path = '/api/v1/solicitudes/'.$app['id'].'/transiciones';
-        $body = ['version' => 1, 'estado' => 'emitida', 'nota' => 'Evaluación final del operador'];
+        $account = Account::create(['cliente_id' => (string) $this->customer->id, 'numero' => '1234567001', 'tipo' => 'ahorro', 'estado' => 'activa', 'moneda' => 'GTQ', 'saldo_centavos' => 0]);
+        $body = ['version' => 1, 'estado' => 'emitida', 'nota' => 'Evaluación final del operador', 'dia_corte' => 10, 'dia_pago' => 28, 'cuenta_id' => (string) $account->id];
         $this->postJson($path, $body, $this->headers($this->manager))->assertUnprocessable();
         $this->postJson($path, $body + ['limite_asignado' => '8500.01'], $this->headers($this->manager))->assertUnprocessable()->assertJsonPath('code', 'RISK_LIMIT_EXCEEDED');
-        foreach (['cajero', 'analista', 'auditor', 'empresa_operador', 'empresa_aprobador'] as $role) {
+        foreach (['operador', 'empresa'] as $role) {
             $this->postJson($path, $body + ['limite_asignado' => '8000.00'], $this->headers($this->staffToken($role)))->assertForbidden();
         }
         $this->postJson($path, $body + ['limite_asignado' => '8000.00', 'cliente_ref' => 'banca-1'], $this->headers())->assertForbidden();
@@ -212,16 +213,28 @@ final class EcosystemTest extends TestCase
         self::assertSame('10030', $payload['gestion_ref']);
     }
 
-    public function test_personal_credit_emission_never_creates_card_or_credits_account_balance(): void
+    public function test_loan_emission_disburses_from_the_master_account_with_an_installment_schedule(): void
     {
+        app(InstallService::class)->fundMasterAccount();
+        $master = Account::where('system_key', 'concentradora')->firstOrFail();
+        $opening = (int) $master->saldo_centavos;
         $app = $this->received();
-        $account = Account::create(['cliente_id' => (string) $this->customer->id, 'numero' => '1234567890', 'saldo_centavos' => 12300]);
-        $this->postJson('/api/v1/solicitudes/'.$app['id'].'/transiciones', ['estado' => 'emitida', 'version' => 1, 'limite_asignado' => '8500.00', 'nota' => 'Crédito autorizado por el operador'], $this->headers($this->manager))->assertOk()->assertJsonPath('data.estado', 'emitida');
+        $account = Account::create(['cliente_id' => (string) $this->customer->id, 'numero' => '1234567890', 'tipo' => 'ahorro', 'estado' => 'activa', 'moneda' => 'GTQ', 'saldo_centavos' => 12300]);
+        $body = ['estado' => 'emitida', 'version' => 1, 'limite_asignado' => '8500.00', 'nota' => 'Crédito autorizado por el operador'];
+        $this->postJson('/api/v1/solicitudes/'.$app['id'].'/transiciones', $body, $this->headers($this->manager))->assertUnprocessable()->assertJsonPath('code', 'LOAN_TERMS_REQUIRED');
+        $this->postJson('/api/v1/solicitudes/'.$app['id'].'/transiciones', $body + ['plazo_meses' => 12, 'tasa_anual' => '12', 'dia_pago' => 15, 'cuenta_id' => (string) $account->id], $this->headers($this->manager))->assertOk()->assertJsonPath('data.estado', 'emitida');
         self::assertSame(0, Card::count());
         self::assertSame(1, Credit::count());
-        self::assertSame(850000, Credit::first()->limite_centavos);
-        self::assertSame(0, Credit::first()->desembolsado_centavos);
-        self::assertSame(12300, $account->refresh()->saldo_centavos);
+        $credit = Credit::first();
+        self::assertSame(850000, $credit->limite_centavos);
+        self::assertSame(850000, $credit->desembolsado_centavos);
+        self::assertSame(850000, $credit->saldo_centavos);
+        self::assertSame(862300, $account->refresh()->saldo_centavos);
+        self::assertSame($opening - 850000, $master->refresh()->saldo_centavos);
+        self::assertCount(12, $credit->cuotas);
+        self::assertSame(850000, array_sum(array_column($credit->cuotas, 'capital_centavos')));
+        self::assertSame('2026-11-15', $credit->cuotas[0]['fecha_vencimiento']);
+        self::assertSame(75521, $credit->cuota_centavos, 'Fixed installment of Q8,500 at 12 % for 12 months.');
         $this->getJson('/api/v1/creditos?cliente_ref=banca-1', $this->headers())->assertOk()->assertJsonCount(1, 'data.data');
         Customer::create(['nombre' => 'Otro', 'external_ref' => 'other', 'dpi' => '2222222222222']);
         $this->getJson('/api/v1/creditos?cliente_ref=other', $this->headers())->assertOk()->assertJsonCount(0, 'data.data');
@@ -239,9 +252,10 @@ final class EcosystemTest extends TestCase
     public function test_alerts_are_employee_scoped_and_read_status_is_personal_and_snapshot_based(): void
     {
         $first = app(AlertService::class)->publish('customer-1', 'clientes.read', 'Cliente registrado', 'Primer registro');
-        $other = $this->staffToken('gerente');
+        $other = $this->staffToken('administrador');
         $this->getJson('/api/v1/alertas', $this->headers())->assertForbidden();
-        $this->getJson('/api/v1/alertas', $this->headers($this->staffToken('empresa_operador')))->assertForbidden();
+        $this->getJson('/api/v1/alertas', $this->headers($this->staffToken('empresa')))->assertForbidden();
+        $this->getJson('/api/v1/alertas', $this->headers($this->staffToken('operador')))->assertForbidden();
         $this->getJson('/api/v1/alertas', $this->headers($this->manager))->assertOk()->assertJsonPath('data.sin_leer', 1)->assertJsonMissingPath('data.alertas.data.0.leida_por');
         app(AlertService::class)->publish('customer-2', 'clientes.read', 'Otro cliente', 'Un registro posterior');
         $this->postJson('/api/v1/alertas/leidas', ['ids' => [(string) $first->id]], $this->headers($this->manager))->assertOk();

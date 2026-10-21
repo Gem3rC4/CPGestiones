@@ -8,7 +8,7 @@ class HealthTest extends TestCase
 {
     public function test_health_endpoint_is_public_and_does_not_expose_secrets(): void
     {
-        $this->getJson('/api/v1/health')->assertOk()->assertExactJson(['ok' => true, 'name' => 'CP Gestiones', 'version' => '1.2.0']);
+        $this->getJson('/api/v1/health')->assertOk()->assertExactJson(['ok' => true, 'name' => 'CP Gestiones', 'version' => '2.0.0']);
     }
 
     public function test_root_identifies_the_api_in_json(): void

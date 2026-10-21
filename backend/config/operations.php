@@ -21,13 +21,21 @@ return [
         'claro' => ['nombre' => 'Telefonía móvil (Claro)', 'categoria' => 'Telefonía', 'campo' => 'Número de teléfono'],
         'tigo' => ['nombre' => 'Telefonía móvil (Tigo)', 'categoria' => 'Telefonía', 'campo' => 'Número de teléfono'],
     ],
+    // Panel sessions: short-lived JWT access token plus a rotating refresh token (rubric: JWT + refresh).
+    'jwt' => ['access_minutes' => (int) env('JWT_ACCESS_MINUTES', 15), 'refresh_hours' => (int) env('JWT_REFRESH_HOURS', 12), 'issuer' => 'cp-gestiones'],
+    // Bank's own funds. Loans are disbursed from this account; it opens with this balance (cents).
+    'master_account_opening_cents' => (int) env('MASTER_ACCOUNT_OPENING_CENTS', 5_000_000_000),
+    // Reference exchange rate (external API). Banguat publishes the official rate; the second source is a fallback.
+    'exchange' => ['banguat_url' => env('BANGUAT_URL', 'https://www.banguat.gob.gt/variables/ws/TipoCambio.asmx'), 'fallback_url' => env('EXCHANGE_FALLBACK_URL', 'https://open.er-api.com/v6/latest/USD'), 'cache_minutes' => 60],
+    /*
+     * Three roles (project requirement):
+     * - administrador: full control; the only one who creates users and assigns roles.
+     * - operador: Operations module only, to download customer transactions and generate reports.
+     * - empresa: representative of ONE company (usuarios.empresa_id); loads, approves and downloads its payrolls.
+     */
     'roles' => [
         'administrador' => ['*'],
-        'gerente' => ['dashboard.read', 'clientes.read', 'clientes.write', 'clientes.manage', 'cuentas.read', 'cuentas.write', 'cuentas.manage', 'dinero.write', 'caja.write', 'productos.read', 'solicitudes.read', 'solicitudes.write', 'solicitudes.manage', 'tarjetas.read', 'tarjetas.write', 'empresas.read', 'empresas.write', 'planillas.read', 'planillas.write', 'planillas.approve', 'bitacora.read', 'integraciones.read'],
-        'cajero' => ['dashboard.read', 'clientes.read', 'clientes.write', 'cuentas.read', 'cuentas.write', 'dinero.write', 'caja.write', 'productos.read', 'solicitudes.read', 'solicitudes.write', 'tarjetas.read'],
-        'analista' => ['dashboard.read', 'clientes.read', 'cuentas.read', 'productos.read', 'solicitudes.read', 'bitacora.read'],
-        'auditor' => ['dashboard.read', 'clientes.read', 'cuentas.read', 'productos.read', 'solicitudes.read', 'tarjetas.read', 'empresas.read', 'planillas.read', 'bitacora.read', 'seguridad.read', 'integraciones.read'],
-        'empresa_operador' => ['empresas.read', 'planillas.read', 'planillas.write'],
-        'empresa_aprobador' => ['empresas.read', 'planillas.read', 'planillas.approve'],
+        'operador' => ['movimientos.read', 'reportes.cuentas', 'reportes.transacciones', 'reportes.planillas'],
+        'empresa' => ['empresas.read', 'colaboradores.read', 'planillas.read', 'planillas.write', 'planillas.approve', 'reportes.planillas'],
     ],
 ];

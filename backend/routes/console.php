@@ -6,6 +6,7 @@ use App\Models\Payroll;
 use App\Models\User;
 use App\Services\AuthService;
 use App\Services\CardService;
+use App\Services\CollectionService;
 use App\Services\InstallService;
 use App\Services\OutboxService;
 use App\Services\PayrollService;
@@ -18,26 +19,23 @@ use Illuminate\Support\Facades\Schedule;
 Artisan::command('cp:install', function (InstallService $service) {
     $service->indexes();
     $service->catalog();
-    $this->info('Colecciones, índices y catálogo listos.');
+    $service->fundMasterAccount();
+    $purged = $service->purgeCorporateDemo();
+    $roles = $service->migrateRoles();
+    $this->info('Colecciones, índices, catálogo y cuenta concentradora listos.');
+    if (array_sum($purged) > 0) {
+        $this->info('Datos de prueba corporativos eliminados: '.json_encode($purged, JSON_UNESCAPED_UNICODE));
+    }
+    if ($roles > 0) {
+        $this->info('Usuarios migrados a los nuevos roles: '.$roles);
+    }
 });
 Artisan::command('cp:upgrade-registration', function (RegistrationUpgradeService $service) {
     $this->info('Clientes actualizados: '.$service->run().'. Índices de registro preparados.');
 })->purpose('Cifrar DPI anteriores y comprobar duplicados; ejecutar en mantenimiento.');
-Artisan::command('cp:demo {--password=}', function (InstallService $service) {
-    if (! app()->environment('local', 'testing')) {
-        $this->error('Los datos demo solo se habilitan en local.');
-
-        return 1;
-    }
-    $password = $this->option('password') ?: $this->secret('Contraseña de demostración (mínimo 12 caracteres)');
-    if (strlen($password) < 12) {
-        $this->error('Usa al menos 12 caracteres.');
-
-        return 1;
-    }
-    $service->demo($password);
-    $this->info('Datos ficticios creados. Usuario: admin@cp.local.');
-});
+Artisan::command('cp:cobros', function (CollectionService $service) {
+    $this->line(json_encode($service->run(), JSON_UNESCAPED_UNICODE));
+})->purpose('Débito automático de cuotas de préstamo y de estados de cuenta de tarjeta vencidos.');
 Artisan::command('cp:admin {email} {name}', function () {
     $password = $this->secret('Contraseña (12 caracteres, mayúscula, minúscula y número)');
     validator(['password' => $password, 'email' => $this->argument('email')], ['email' => 'required|email', 'password' => 'required|min:12|regex:/[A-Z]/|regex:/[a-z]/|regex:/[0-9]/'])->validate();
@@ -107,3 +105,4 @@ Artisan::command('cp:outbox-retry {id}', function () {
 Schedule::command('cp:payrolls')->everyMinute()->withoutOverlapping();
 Schedule::command('cp:outbox')->everyMinute()->withoutOverlapping();
 Schedule::command('cp:close-day')->dailyAt('23:59')->timezone('America/Guatemala')->withoutOverlapping();
+Schedule::command('cp:cobros')->dailyAt('18:00')->timezone('America/Guatemala')->withoutOverlapping();

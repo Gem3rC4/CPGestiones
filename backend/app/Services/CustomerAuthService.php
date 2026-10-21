@@ -37,7 +37,7 @@ class CustomerAuthService
             CustomerSession::create(['token_hash' => hash('sha256', $plain), 'cliente_id' => (string) $customer->id, 'expires_at' => now()->addMinutes(config('operations.token_minutes')), 'dispositivo' => $data['dispositivo'] ?? null, 'ip' => $data['ip'] ?? null, 'ultima_actividad' => now()]);
             app(SecurityService::class)->record('login_cliente', 'cliente:'.$customer->id);
 
-            return ['token_cliente' => $plain, 'expires_in' => config('operations.token_minutes') * 60, 'cliente' => app(BankRegistrationService::class)->profile($customer->refresh())];
+            return ['token_cliente' => $plain, 'expires_in' => config('operations.token_minutes') * 60, 'cliente' => app(BankRegistrationService::class)->sessionProfile($customer->refresh())];
         }, attempts: 5);
         if ($result === null) {
             throw new BusinessException('Credenciales incorrectas o acceso temporalmente bloqueado.', 'INVALID_CREDENTIALS', 401);

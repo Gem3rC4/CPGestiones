@@ -122,6 +122,26 @@
     {
       "key": "dpi",
       "value": "3068226670601"
+    },
+    {
+      "key": "refreshToken",
+      "value": ""
+    },
+    {
+      "key": "creditoId",
+      "value": ""
+    },
+    {
+      "key": "cuentaId",
+      "value": ""
+    },
+    {
+      "key": "empresaId",
+      "value": ""
+    },
+    {
+      "key": "clienteId",
+      "value": ""
     }
   ],
   "item": [
@@ -209,7 +229,7 @@
                 "value": "application/json"
               }
             ],
-            "description": "Consulta o gestión de auth",
+            "description": "Inicia sesión en el panel. Devuelve un access token JWT (15 min) y un refresh token (12 h).",
             "auth": {
               "type": "noauth"
             },
@@ -229,7 +249,48 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if (pm.response.code === 200) { pm.collectionVariables.set(\"token\", pm.response.json().data.token); }"
+                  "if (pm.response.code === 200) { pm.collectionVariables.set(\"token\", pm.response.json().data.token); pm.collectionVariables.set(\"refreshToken\", pm.response.json().data.refresh_token); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /auth/refresh",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/refresh",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Renueva el JWT. El refresh token rota: guarda el nuevo; reutilizar uno anterior cierra la sesión."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) { pm.collectionVariables.set(\"token\", pm.response.json().data.token); pm.collectionVariables.set(\"refreshToken\", pm.response.json().data.refresh_token); }"
                 ]
               }
             }
@@ -897,6 +958,30 @@
               "raw": "{\n  \"dpi\": \"{{dpi}}\",\n  \"correo_electronico\": \"ferfajardo@creditpulse.com\",\n  \"fecha_nacimiento\": \"12/06/2003\",\n  \"contrasena_nueva\": \"{{customerNewPassword}}\"\n}"
             }
           }
+        },
+        {
+          "name": "GET /banca/tipo-cambio",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/banca/tipo-cambio",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{bankToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Tipo de cambio de referencia del Banco de Guatemala."
+          }
         }
       ]
     },
@@ -1019,7 +1104,86 @@
                 "value": "application/json"
               }
             ],
-            "description": "Consulta o gestión de creditos Permiso requerido: solicitudes.read."
+            "description": "Préstamos con su plan de cuotas, saldo y próxima cuota. Permiso: creditos.read (Banca: con dpi o X-Cliente-Token)."
+          }
+        },
+        {
+          "name": "GET /creditos/{id}",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/creditos/{{creditoId}}?dpi={{dpi}}",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{bankToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Un préstamo con todas sus cuotas."
+          }
+        },
+        {
+          "name": "POST /creditos/{id}/pagos",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/creditos/{{creditoId}}/pagos",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{bankToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dpi\": \"{{dpi}}\",\n  \"origen_id\": \"{{cuentaId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Paga la próxima cuota (o el monto indicado con \"monto\": \"1500.00\") desde una cuenta del cliente."
+          }
+        },
+        {
+          "name": "POST /cobros/ejecutar",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/cobros/ejecutar",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "description": "Solo administrador: ejecuta ahora el débito automático de cuotas y tarjetas vencidas."
           }
         }
       ]
@@ -1819,20 +1983,76 @@
       ]
     },
     {
-      "name": "usuarios-corporativos",
+      "name": "reportes",
       "item": [
         {
-          "name": "GET /usuarios-corporativos",
+          "name": "GET /reportes/opciones",
           "request": {
             "method": "GET",
-            "url": "{{baseUrl}}/usuarios-corporativos",
+            "url": "{{baseUrl}}/reportes/opciones",
             "header": [
               {
                 "key": "Accept",
                 "value": "application/json"
               }
             ],
-            "description": "Consulta o gestión de usuarios-corporativos Permiso requerido: empresas.write."
+            "description": "Empresas y clientes disponibles para los filtros según el rol."
+          }
+        },
+        {
+          "name": "GET /reportes/planillas",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/reportes/planillas?empresa_id={{empresaId}}&estado=pagada&desde=2026-10-01&hasta=2026-10-31",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "description": "Pago de planillas por empresa. Permiso: reportes.planillas (el rol Empresa solo la suya)."
+          }
+        },
+        {
+          "name": "GET /reportes/estado-cuenta",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/reportes/estado-cuenta?cliente_id={{clienteId}}&desde=2026-10-01&hasta=2026-10-31",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "description": "Estado de cuenta de un cliente: saldos, movimientos, préstamos y tarjetas. Permiso: reportes.cuentas."
+          }
+        },
+        {
+          "name": "GET /reportes/transacciones",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/reportes/transacciones?desde=2026-10-01&hasta=2026-10-31&tipo=deposito",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "description": "Transacciones de todos los clientes consolidadas. Permiso: reportes.transacciones."
+          }
+        },
+        {
+          "name": "GET /tipo-cambio",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/tipo-cambio",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "description": "API externa: tipo de cambio del Banco de Guatemala con respaldo."
           }
         }
       ]

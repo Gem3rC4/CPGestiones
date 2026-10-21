@@ -365,18 +365,28 @@ final class BankRegistrationTest extends TestCase
         $card = $this->postJson('/api/v1/banca/solicitudes', ['dpi' => '3068226670601', 'producto' => 'credito-oro', 'monto_solicitado' => '20000.00', 'monto_aprobado' => '15000.00', 'evaluacion_ref' => 'eval-77'], $this->headers('ap-02'))
             ->assertCreated()->assertJsonPath('data.limite_aprobado_centavos', 1500000)->json('data');
         $this->postJson('/api/v1/banca/solicitudes', ['dpi' => '3068226670601', 'producto' => 'credito-platino', 'monto_solicitado' => '100.00', 'monto_aprobado' => '200.00'], $this->headers('ap-03'))->assertUnprocessable()->assertJsonValidationErrors('monto_aprobado');
-        $manager = $this->staff('gerente');
+        app(InstallService::class)->fundMasterAccount();
+        $account = $this->postJson('/api/v1/banca/cuentas', ['dpi' => '3068226670601', 'producto' => 'ahorro'], $this->headers('ap-acct'))->assertCreated()->json('data');
+        $loanTerms = ['plazo_meses' => 24, 'tasa_anual' => '18', 'dia_pago' => 10, 'cuenta_id' => $account['id']];
+        $cardTerms = ['dia_corte' => 5, 'dia_pago' => 25, 'cuenta_id' => $account['id']];
+        $manager = $this->staff('administrador');
         $approve = fn (array $gestion, array $body, string $key, ?string $token = null) => $this->postJson('/api/v1/solicitudes/'.$gestion['id'].'/transiciones', $body + ['version' => 1, 'nota' => 'Gestión aprobada por el banco.'], $this->headers($key, $token ?? $manager));
 
         $approve($personal, ['estado' => 'rechazada'], 'ap-04')->assertConflict()->assertJsonPath('code', 'INVALID_STATE');
-        $approve($personal, ['estado' => 'emitida', 'limite_asignado' => '30000.01'], 'ap-05')->assertUnprocessable()->assertJsonPath('code', 'RISK_LIMIT_EXCEEDED');
-        $approve($personal, ['estado' => 'emitida', 'limite_asignado' => '25000.00'], 'ap-06', $this->staff('cajero'))->assertForbidden();
+        $approve($personal, ['estado' => 'emitida', 'limite_asignado' => '30000.01'] + $loanTerms, 'ap-05')->assertUnprocessable()->assertJsonPath('code', 'RISK_LIMIT_EXCEEDED');
+        $approve($personal, ['estado' => 'emitida', 'limite_asignado' => '25000.00'] + $loanTerms, 'ap-06', $this->staff('operador'))->assertForbidden();
         $approve($personal, ['estado' => 'emitida', 'limite_asignado' => '25000.00', 'dpi' => '3068226670601'], 'ap-07', $this->token)->assertForbidden();
-        $approve($personal, ['estado' => 'emitida', 'limite_asignado' => '25000.00'], 'ap-08')->assertOk()->assertJsonPath('data.estado', 'emitida')->assertJsonPath('data.limite_asignado_centavos', 2500000);
+        $approve($personal, ['estado' => 'emitida', 'limite_asignado' => '25000.00'], 'ap-08a')->assertUnprocessable()->assertJsonPath('code', 'LOAN_TERMS_REQUIRED');
+        $approve($personal, ['estado' => 'emitida', 'limite_asignado' => '25000.00'] + $loanTerms, 'ap-08')->assertOk()->assertJsonPath('data.estado', 'emitida')->assertJsonPath('data.limite_asignado_centavos', 2500000);
         self::assertSame(2500000, Credit::first()->limite_centavos);
-        $approve($card, ['estado' => 'emitida', 'limite_asignado' => '15000.01'], 'ap-09')->assertUnprocessable()->assertJsonPath('code', 'RISK_LIMIT_EXCEEDED');
-        $approve($card, ['estado' => 'emitida', 'limite_asignado' => '15000.00'], 'ap-10')->assertOk();
+        self::assertSame(2500000, Account::findOrFail($account['id'])->saldo_centavos, 'The loan is disbursed into the chosen account.');
+        self::assertCount(24, Credit::first()->cuotas);
+        $approve($card, ['estado' => 'emitida', 'limite_asignado' => '15000.01'] + $cardTerms, 'ap-09')->assertUnprocessable()->assertJsonPath('code', 'RISK_LIMIT_EXCEEDED');
+        $approve($card, ['estado' => 'emitida', 'limite_asignado' => '15000.00'], 'ap-10a')->assertUnprocessable()->assertJsonPath('code', 'CARD_TERMS_REQUIRED');
+        $approve($card, ['estado' => 'emitida', 'limite_asignado' => '15000.00'] + $cardTerms, 'ap-10')->assertOk();
         self::assertSame(1500000, Card::where('tipo', 'credito')->first()->limite_centavos);
+        self::assertSame(5, Card::where('tipo', 'credito')->first()->dia_corte);
+        self::assertSame(['cutoff_day' => 5, 'payment_day' => 25], array_intersect_key(Card::where('tipo', 'credito')->first()->policy, ['cutoff_day' => 1, 'payment_day' => 1]));
 
         $this->postJson('/api/v1/banca/cuentas', ['dpi' => '3068226670601', 'producto' => 'ahorro'], $this->headers('ap-11'))->assertCreated();
         $debit = $this->postJson('/api/v1/banca/solicitudes', ['dpi' => '3068226670601', 'producto' => 'debito'], $this->headers('ap-12'))->json('data');

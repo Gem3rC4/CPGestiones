@@ -2,6 +2,13 @@
 
 Esta guía es para quien desarrolla **CP Banca Virtual**. CP Gestiones es el sistema central: guarda los perfiles de acceso de los clientes (con su contraseña), sus cuentas, saldos, movimientos, tarjetas y gestiones. Banca Virtual no necesita una base propia para esos datos: los consulta y modifica por estas APIs.
 
+> **Versión 3 del contrato (21/10/2026).** Novedades (todo lo anterior sigue funcionando igual):
+> - **Login de clientes creados en Gestiones.** `POST /banca/auth/login` ahora devuelve el **DPI completo** en `data.cliente.dpi`. Antes solo venía enmascarado, y un cliente que el banco registró en el panel (sin pasar por el registro de la app) no existía en la base de Banca: por eso la app mostraba "Cliente no encontrado". **No busques al usuario en tu propia base antes de llamar al login**: llama directo a `POST /banca/auth/login` y, si quieres guardarlo en tu base, créalo ahí mismo con el `cliente` que devuelve.
+> - **La sesión identifica al cliente.** En vez de `dpi` puedes enviar el encabezado `X-Cliente-Token: <token_cliente>` en cualquier API de cliente (ver 2.1).
+> - **Préstamos con cuotas** (nuevo 4.18): al aprobarlo, el banco deposita el dinero en la cuenta del cliente y define cuotas, tasa y día de pago. La app muestra el plan de pagos y el cliente paga sus cuotas.
+> - **Tarjetas con día de corte y día de pago**: el saldo de cada corte se debita automáticamente de la cuenta elegida el día de pago (4.12).
+> - **Tipo de cambio** del Banco de Guatemala: `GET /banca/tipo-cambio` (4.19).
+>
 > **Versión 2 del contrato (20/10/2026).** Cambios respecto a la versión anterior:
 > - El cliente se identifica por su **DPI** en todas las llamadas (`dpi`). `cliente_ref` ya no es necesario; se sigue aceptando para no romper lo que ya esté conectado.
 > - El **registro es mínimo** (nombre, apellido, correo, contraseña, DPI y fecha de nacimiento) y **ya no abre una cuenta**. Las cuentas se abren desde el apartado **Cuentas** (`POST /banca/cuentas`).
@@ -37,11 +44,21 @@ Content-Type: application/json
 
 ## 2. Reglas que aplican a todo
 
-1. **El cliente se identifica por su DPI** (13 dígitos, sin espacios ni guiones): `?dpi=3068226670601` en las consultas `GET` o `"dpi": "3068226670601"` en el JSON de las escrituras. Tómalo siempre de la **sesión del usuario en tu servidor** (lo devuelve el login como parte de su perfil que tú guardas), nunca de lo que mande el navegador: Gestiones confía en lo que dice tu servidor. Si no envías el DPI: `422 CLIENT_SCOPE_REQUIRED`; si no existe: `404 CUSTOMER_NOT_FOUND`.
+1. **El cliente se identifica por su DPI** (13 dígitos, sin espacios ni guiones) **o por su sesión** (ver 2.1): `?dpi=3068226670601` en las consultas `GET` o `"dpi": "3068226670601"` en el JSON de las escrituras. Tómalo siempre de la **sesión del usuario en tu servidor** (lo devuelve el login como parte de su perfil que tú guardas), nunca de lo que mande el navegador: Gestiones confía en lo que dice tu servidor. Si no envías el DPI: `422 CLIENT_SCOPE_REQUIRED`; si no existe: `404 CUSTOMER_NOT_FOUND`.
 2. **`Idempotency-Key` en cada escritura** (registro, abrir cuenta, gestiones, transferencias, pagos…): un texto único por operación, de 8 a 120 caracteres (`A-Z a-z 0-9 _ . : -`), por ejemplo un UUID. Si la petición falla por timeout, **reintenta con la misma clave y el mismo cuerpo**: Gestiones no la ejecuta dos veces. Para una operación nueva, usa una clave nueva. No la llevan: login, logout, recuperar o cambiar contraseña, cerrar una sesión y las consultas `GET`.
 3. **Importes:** como texto con punto decimal, `"150.25"` (sin comas, sin `Q`, sin negativos). `ingresos_mensuales_q` y `monto_solicitado` aceptan también número JSON. Las respuestas traen `saldo` (`"150.25"`) y `saldo_centavos` (`15025`); para sumar, usa centavos.
 4. **Respuestas:** éxito `{"ok": true, "data": ...}`. Las listas vienen paginadas: los registros en `data.data`, más `current_page`, `last_page`, `total`.
 5. **Errores:** `{"ok": false, "message": "...", "code": "...", "errors": {...}}`. Muestra `message` al usuario; con `422`, `errors` trae el mensaje de cada campo (en español).
+
+### 2.1 Identificar al cliente con su sesión (opcional)
+
+Después del login puedes mandar el encabezado `X-Cliente-Token: <token_cliente>` y omitir `dpi` en cualquier API de cliente (resumen, cuentas, movimientos, transferencias, gestiones, préstamos, tarjetas, pagos de servicios). Gestiones toma al cliente de esa sesión. Si envías los dos y no coinciden: `403`. Si la sesión venció: `401 CUSTOMER_SESSION_EXPIRED` (vuelve a iniciar sesión).
+
+```http
+GET /banca/resumen
+Authorization: Bearer TOKEN_DE_INTEGRACION_BANCA
+X-Cliente-Token: 6f1c...e9a2
+```
 
 | HTTP | Significado |
 | --- | --- |
@@ -70,14 +87,16 @@ Content-Type: application/json
 | Pagar servicios (catálogo, pagar e historial) | `GET /banca/servicios`, `POST /banca/pagos-servicios`, `GET /banca/pagos-servicios` |
 | Productos (catálogo) | `GET /productos` |
 | Enviar al banco la gestión aprobada por Analítica y aceptada por el cliente | `POST /banca/solicitudes` |
-| Gestiones en línea (seguimiento) | `GET /solicitudes`, `GET /solicitudes/{id}`, `GET /creditos` |
+| Gestiones en línea (seguimiento) | `GET /solicitudes`, `GET /solicitudes/{id}` |
+| Mis préstamos (plan de pagos y pagar cuota) | `GET /creditos`, `GET /creditos/{id}`, `POST /creditos/{id}/pagos` |
+| Tipo de cambio | `GET /banca/tipo-cambio` |
 | Mis tarjetas (límite, saldo, estados de cuenta) | `GET /tarjetas`, `GET /tarjetas/{id}/estados-cuenta` |
 | Pagar tarjeta / bloquear tarjeta | `POST /tarjetas/{id}/pagos`, `PATCH /tarjetas/{id}/estado` |
 | Mi perfil (ver y editar datos financieros) | `GET /banca/perfil`, `PATCH /banca/perfil/finanzas` |
 | Seguridad: cambiar contraseña | `POST /banca/auth/contrasena` |
 | Seguridad: sesiones activas y cerrar una sesión | `GET /banca/auth/sesiones`, `POST /banca/auth/sesiones/{id}/revocar` |
 
-**Se manejan en Banca Virtual** (no necesitan API de Gestiones): simulador de préstamos, tipo de cambio, agencias y cajeros, la lista de beneficiarios guardados y la programación de transferencias (en la fecha indicada tu servidor llama a `POST /transferencias`). La verificación en dos pasos del cliente y "Plazo fijo" todavía no tienen API.
+**Se manejan en Banca Virtual** (no necesitan API de Gestiones): simulador de préstamos, agencias y cajeros, la lista de beneficiarios guardados y la programación de transferencias (en la fecha indicada tu servidor llama a `POST /transferencias`). La verificación en dos pasos del cliente y "Plazo fijo" todavía no tienen API.
 
 ---
 
@@ -138,7 +157,7 @@ Gestiones valida la contraseña (no la guardes en Banca). Sin `Idempotency-Key`.
 { "correo_electronico": "ferfajardo@creditpulse.com", "contrasena": "MiClave2026", "dispositivo": "Chrome en Windows", "ip": "203.0.113.7" }
 ```
 
-`dispositivo` (máx. 120 caracteres) e `ip` (IP real del cliente) son opcionales; aparecen en *Sesiones activas* (4.16). Respuesta 200: `data.token_cliente` (sesión de 60 minutos), `data.expires_in` (3600) y `data.cliente` (mismo objeto del registro). Guarda en la **sesión de tu servidor** (cookie HttpOnly) el `token_cliente` y el DPI del usuario: el DPI lo usarás en todas las demás llamadas. No lo guardes en `localStorage`. Cinco contraseñas incorrectas bloquean al cliente 15 minutos; la respuesta siempre es el mismo `401 INVALID_CREDENTIALS`.
+`dispositivo` (máx. 120 caracteres) e `ip` (IP real del cliente) son opcionales; aparecen en *Sesiones activas* (4.16). Respuesta 200: `data.token_cliente` (sesión de 60 minutos), `data.expires_in` (3600) y `data.cliente` (mismo objeto del registro **más `dpi`, el DPI completo**). Funciona igual para clientes que se registraron en la app y para los que el banco registró en el panel de Gestiones (con correo y contraseña asignados por el banco). Guarda en la **sesión de tu servidor** (cookie HttpOnly) el `token_cliente` y el DPI del usuario: el DPI lo usarás en todas las demás llamadas. No lo guardes en `localStorage`. Cinco contraseñas incorrectas bloquean al cliente 15 minutos; la respuesta siempre es el mismo `401 INVALID_CREDENTIALS`.
 
 - `GET /banca/auth/sesion` con encabezado extra `X-Cliente-Token: <token_cliente>` → confirma que la sesión sigue vigente y devuelve `data.cliente` y `data.expires_at`.
 - `POST /banca/auth/logout` con `X-Cliente-Token` → cierra esa sesión.
@@ -260,7 +279,7 @@ Respuesta 201 con la gestión: `id` (**guárdalo**), `folio`, `producto`, `estad
 
 - `GET /solicitudes?dpi=...` → gestiones del cliente: `id`, `folio`, `gestion_ref`, `producto`, `estado`, `version`, `limite_solicitado_centavos`, `limite_aprobado_centavos`, `limite_asignado_centavos`, `tarjeta_id` / `credito_id`, `created_at`. Filtro opcional `&estado=en_evaluacion` o `&estado=emitida`.
 - `GET /solicitudes/{id}?dpi=...` → `data.solicitud` y `data.historial` (cada cambio de estado con fecha y nota, ideal para la línea de tiempo).
-- `GET /creditos?dpi=...` → préstamos autorizados con `referencia`, `limite_centavos` y `estado`.
+- `GET /solicitudes/{id}?dpi=...` también trae `data.credito` (préstamo con su plan de pagos) o `data.tarjeta` cuando la gestión ya fue emitida.
 
 Cómo se ven los pasos de tu pantalla:
 
@@ -275,7 +294,8 @@ Cuando veas `emitida`, la gestión trae `limite_asignado_centavos` (el límite q
 ### 4.12 Mis tarjetas
 
 - `GET /tarjetas?dpi=...` → `referencia`, `ultimos_cuatro`, `tipo` (`credito`/`debito`), `categoria`, `estado`, `limite_centavos`, `principal_centavos` + `interes_centavos` (= deuda actual). Crédito disponible = `limite_centavos - principal_centavos - interes_centavos`.
-- `GET /tarjetas/{id}/estados-cuenta?dpi=...` → cortes con `fecha_corte`, `fecha_pago`, `saldo_centavos`, `minimo_centavos`, `pagado_centavos`.
+- Las tarjetas de crédito aprobadas desde la versión 3 traen `dia_corte`, `dia_pago`, `cuenta_id` (cuenta del cargo automático) y `cargo_automatico: true`.
+- `GET /tarjetas/{id}/estados-cuenta?dpi=...` → cortes con `fecha_corte`, `fecha_pago`, `saldo_centavos`, `minimo_centavos`, `abonado_centavos` (lo pagado de ese corte) y `cargo_automatico` (`{fecha, monto_centavos, resultado}` con `cobrado`, `parcial` o `sin_fondos`). El día de pago Gestiones debita automáticamente lo que falte del corte; si el cliente paga antes desde la app, solo se debita el resto.
 - Pagar: `POST /tarjetas/{id}/pagos` con `{"dpi":"...","origen_id":"<cuenta del cliente>","monto":"250.00"}`. No puede exceder la deuda (`422 PAYMENT_EXCEEDS_DEBT`).
 - Bloquear / desbloquear: `PATCH /tarjetas/{id}/estado` con `{"dpi":"...","estado":"bloqueada","nota":"Bloqueo solicitado por el cliente"}` (o `"activa"`).
 
@@ -371,6 +391,36 @@ El registro, las cuentas y las gestiones ya crean alertas automáticamente en el
 ```
 
 Tipos: `registro.iniciado` (sin DPI), `cliente.registrado`, `cuenta.abierta`, `gestion.en_tramite` (estos tres con `dpi` y como `referencia` el `id` en Gestiones).
+
+---
+
+### 4.18 Mis préstamos
+
+Cuando el banco aprueba un préstamo define el **monto**, el **número de cuotas**, la **tasa anual** y el **día de pago**. El dinero sale de la cuenta concentradora del banco y se deposita en la cuenta que eligió el cliente. Las cuotas son fijas (sistema francés).
+
+- `GET /creditos?dpi=...` → préstamos del cliente. Cada uno trae:
+  `id`, `referencia`, `producto`, `estado` (`vigente` o `pagado`), `monto_centavos`, `saldo_centavos` (capital pendiente) y `saldo` (`"8000.00"`), `pendiente_total_centavos` (capital + intereses por pagar), `tasa_anual` (`"18"`), `plazo_meses`, `dia_pago`, `cuota_centavos`, `cuenta_id` / `cuenta_numero`, `cuotas_total`, `cuotas_pagadas`, `cuotas_vencidas`, `proxima_cuota` (`{numero, fecha_vencimiento, monto_centavos, monto}`), `ultimo_pago` y `cuotas`.
+- Cada elemento de `cuotas`: `numero`, `fecha_vencimiento` (`"2026-11-15"`), `monto_centavos`, `capital_centavos`, `interes_centavos`, `saldo_despues_centavos`, `pagado_centavos`, `estado` (`pendiente`, `parcial` o `pagada`) y `vencida` (`true` si ya pasó su fecha sin pagarse). Con esto dibujas el plan de pagos.
+- `GET /creditos/{id}?dpi=...` → el mismo objeto de un préstamo.
+- **Pagar** (con `Idempotency-Key`): `POST /creditos/{id}/pagos`
+
+```json
+{ "dpi": "3068226670601", "origen_id": "<id de una cuenta del cliente>" }
+```
+
+Sin `monto` paga la **próxima cuota completa**. Con `"monto": "1500.00"` abona esa cantidad: cubre las cuotas en orden, primero los intereses de cada una. Respuesta 201: `transaccion_id`, `monto`, `estado` y `credito` (el préstamo actualizado: saldo, cuotas pagadas y próxima cuota). El pago también aparece en el expediente de la gestión en el panel del banco.
+Errores: `409 INSUFFICIENT_FUNDS` (la cuenta no alcanza), `422 PAYMENT_EXCEEDS_DEBT` (más de lo que se debe), `409 LOAN_SETTLED` (ya está pagado), `403` (la cuenta o el préstamo no son del cliente).
+- **Débito automático:** si el día de pago la cuota sigue pendiente, Gestiones la debita de `cuenta_id` a las 18:00 (lo que alcance si no hay fondos completos).
+
+### 4.19 Tipo de cambio
+
+`GET /banca/tipo-cambio` → tipo de cambio de referencia del dólar, tomado del **Banco de Guatemala**:
+
+```json
+{ "ok": true, "data": { "disponible": true, "moneda": "USD", "quetzales_por_dolar": 7.63916, "fecha": "21/10/2026", "fuente": "Banco de Guatemala", "desactualizado": false } }
+```
+
+Si el Banguat no responde se usa una fuente de respaldo; si ninguna responde vuelve el último valor conocido con `"desactualizado": true`.
 
 ---
 

@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
 class BankCustomerRequest extends OperationRequest
@@ -12,8 +13,9 @@ class BankCustomerRequest extends OperationRequest
     public static function identityRules(): array
     {
         return [
-            'dpi' => ['required_without:cliente_ref', 'string', 'regex:/^[0-9]{13}$/D'],
-            'cliente_ref' => ['required_without:dpi', 'string', 'max:100', 'regex:/^[A-Za-z0-9][A-Za-z0-9_.:@-]*$/D'],
+            // With X-Cliente-Token the logged-in customer is known, so the DPI becomes optional.
+            'dpi' => [Rule::requiredIf(fn (): bool => ! request()->filled('cliente_ref') && ! request()->hasHeader('X-Cliente-Token')), 'string', 'regex:/^[0-9]{13}$/D'],
+            'cliente_ref' => ['sometimes', 'string', 'max:100', 'regex:/^[A-Za-z0-9][A-Za-z0-9_.:@-]*$/D'],
         ];
     }
 
@@ -38,6 +40,7 @@ class BankCustomerRequest extends OperationRequest
     public function messages(): array
     {
         return parent::messages() + [
+            'dpi.required' => 'Indica el DPI del cliente (13 dígitos) o envía X-Cliente-Token.',
             'dpi.required_without' => 'Indica el DPI del cliente (13 dígitos).',
             'dpi.regex' => 'El DPI debe tener 13 dígitos, sin espacios ni guiones.',
             'cliente_ref.required_without' => 'Indica el DPI del cliente (13 dígitos).',

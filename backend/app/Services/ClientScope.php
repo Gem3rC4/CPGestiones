@@ -13,6 +13,9 @@ class ClientScope
             return null;
         }
         $identity = array_filter(request()->only(['dpi', 'cliente_ref']), 'is_string');
+        if ($identity === [] && request()->hasHeader('X-Cliente-Token')) {
+            return (string) app(CustomerRepository::class)->resolve([])->id;
+        }
         if ($identity === []) {
             throw new BusinessException('El servidor de banca debe indicar el DPI del cliente autenticado.', 'CLIENT_SCOPE_REQUIRED', 422);
         }

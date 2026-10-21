@@ -23,7 +23,7 @@ class CustomerAuthController extends ApiController
         $session = $service->session($request->header('X-Cliente-Token', ''));
         $customer = Customer::findOrFail($session->cliente_id);
 
-        return $this->ok(['cliente' => $profiles->profile($customer), 'expires_at' => $session->expires_at]);
+        return $this->ok(['cliente' => $profiles->sessionProfile($customer), 'expires_at' => $session->expires_at]);
     }
 
     public function logout(Request $request, CustomerAuthService $service): JsonResponse

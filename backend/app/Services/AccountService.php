@@ -16,10 +16,11 @@ class AccountService
 {
     /**
      * Internal accounts that stand for money entering the ledger from outside: cash received at the
-     * counter and the bank's own interest expense. Their negative balance is that inflow, so the sum of
+     * counter, the bank's own interest expense and the bank's capital (which funds the master account).
+     * Their negative balance is that inflow, so the sum of
      * every balance stays zero. Customer and settlement accounts can never be overdrawn.
      */
-    public const COUNTERPARTY_ACCOUNTS = ['caja', 'intereses'];
+    public const COUNTERPARTY_ACCOUNTS = ['caja', 'intereses', 'capital'];
 
     public function __construct(private AccountRepository $repository) {}
 

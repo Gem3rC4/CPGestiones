@@ -6,7 +6,6 @@ use App\Exceptions\BusinessException;
 use App\Models\Account;
 use App\Models\Card;
 use App\Models\CardApplication;
-use App\Models\Credit;
 use App\Models\Customer;
 use App\Models\OutboxEvent;
 use App\Models\Product;
@@ -108,15 +107,24 @@ class ApplicationService
             $app->limite_asignado_centavos = $assigned;
             $app->resolucion = ['operador_id' => $actor, 'fecha' => now()->toIso8601String(), 'nota' => $d['nota'], 'limite_centavos' => $assigned];
             if ($app->tipo !== 'debito') {
-                $d['nota'] .= ' Límite asignado: Q '.Money::format($assigned).'; máximo autorizado: Q '.Money::format($maximum).'.';
+                $d['nota'] .= ' '.($app->tipo === 'prestamo' ? 'Monto aprobado' : 'Límite asignado').': Q '.Money::format($assigned).'; máximo autorizado: Q '.Money::format($maximum).'.';
             }
             // A risk request queued before approval is no longer needed.
             OutboxEvent::where('aggregate_id', $id)->where('type', 'riesgo.solicitado')->where('status', 'pendiente')->update(['status' => 'descartado']);
             if ($app->tipo === 'prestamo') {
-                $credit = Credit::create(['solicitud_id' => $id, 'cliente_id' => $app->cliente_id, 'producto' => $app->producto, 'referencia' => 'CRE-'.strtoupper(bin2hex(random_bytes(6))), 'limite_centavos' => $assigned, 'saldo_centavos' => 0, 'desembolsado_centavos' => 0, 'estado' => 'autorizado', 'moneda' => 'GTQ', 'operador_id' => $actor]);
+                foreach (['plazo_meses' => 'el número de cuotas', 'tasa_anual' => 'la tasa de interés anual', 'dia_pago' => 'el día de pago', 'cuenta_id' => 'la cuenta donde se depositará'] as $field => $name) {
+                    if (! isset($d[$field]) || $d[$field] === '') {
+                        throw new BusinessException('Para aprobar el préstamo indica '.$name.'.', 'LOAN_TERMS_REQUIRED', 422);
+                    }
+                }
+                if ($assigned < 1) {
+                    throw new BusinessException('Indica el monto del préstamo.', 'LOAN_TERMS_REQUIRED', 422);
+                }
+                $credit = app(LoanService::class)->issue($app, $assigned, $d, $actor);
                 $app->credito_id = (string) $credit->id;
+                $d['nota'] .= ' '.$credit->plazo_meses.' cuotas de Q '.Money::format((int) $credit->cuota_centavos).' al '.app(LoanService::class)->view($credit)['tasa_anual'].' % anual, pago el día '.$credit->dia_pago.' de cada mes. Desembolsado a la cuenta '.$credit->cuenta_numero.'.';
             } else {
-                $card = Card::create(['solicitud_id' => $id, 'cliente_id' => $app->cliente_id, 'producto' => $app->producto, 'tipo' => $app->tipo, 'categoria' => $app->categoria, 'cuenta_id' => $app->cuenta_id, 'referencia' => 'CP-'.strtoupper(bin2hex(random_bytes(6))), 'ultimos_cuatro' => (string) random_int(1000, 9999), 'limite_centavos' => $assigned, 'principal_centavos' => 0, 'interes_centavos' => 0, 'estado' => 'activa', 'policy' => $app->policy, 'emitida_el' => now()->timezone(config('operations.timezone'))->toDateString()]);
+                $card = $this->issueCard($app, $assigned, $d);
                 $app->tarjeta_id = (string) $card->id;
             }
         }
@@ -135,5 +143,38 @@ class ApplicationService
         }
 
         return $app->toArray();
+    }
+
+    /**
+     * Credit cards need the statement cut-off day, the payment day and the customer's account that is
+     * debited automatically on the payment day for the balance of each statement.
+     */
+    private function issueCard(CardApplication $app, int $assigned, array &$d): Card
+    {
+        $policy = $app->policy;
+        $chargeAccount = $app->cuenta_id;
+        if ($app->tipo === 'credito') {
+            foreach (['dia_corte' => 'el día de corte', 'dia_pago' => 'el día de pago', 'cuenta_id' => 'la cuenta para el cargo automático'] as $field => $name) {
+                if (empty($d[$field])) {
+                    throw new BusinessException('Para aprobar la tarjeta indica '.$name.'.', 'CARD_TERMS_REQUIRED', 422);
+                }
+            }
+            $account = Account::find($d['cuenta_id']);
+            if (! $account || $account->cliente_id !== $app->cliente_id || $account->estado !== 'activa' || $account->system_key) {
+                throw new BusinessException('Selecciona una cuenta activa del cliente para el cargo automático.', 'INVALID_ACCOUNT', 422);
+            }
+            if ((int) $d['dia_corte'] === (int) $d['dia_pago']) {
+                throw new BusinessException('El día de pago debe ser distinto del día de corte.', 'INVALID_PAYMENT_DAY', 422);
+            }
+            $policy = ['cutoff_day' => (int) $d['dia_corte'], 'payment_day' => (int) $d['dia_pago']] + $policy;
+            $chargeAccount = (string) $account->id;
+            $d['nota'] .= ' Corte el día '.(int) $d['dia_corte'].', pago el día '.(int) $d['dia_pago'].' con cargo automático a la cuenta '.$account->numero.'.';
+        }
+
+        return Card::create(['solicitud_id' => (string) $app->id, 'cliente_id' => $app->cliente_id, 'producto' => $app->producto, 'tipo' => $app->tipo, 'categoria' => $app->categoria,
+            'cuenta_id' => $chargeAccount, 'referencia' => 'CP-'.strtoupper(bin2hex(random_bytes(6))), 'ultimos_cuatro' => (string) random_int(1000, 9999),
+            'limite_centavos' => $assigned, 'principal_centavos' => 0, 'interes_centavos' => 0, 'estado' => 'activa', 'policy' => $policy,
+            'emitida_el' => now()->timezone(config('operations.timezone'))->toDateString()]
+            + ($app->tipo === 'credito' ? ['dia_corte' => (int) $d['dia_corte'], 'dia_pago' => (int) $d['dia_pago'], 'cargo_automatico' => true] : []));
     }
 }

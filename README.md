@@ -73,12 +73,12 @@ Requisitos: PHP 8.4 o superior compatible con Laravel 13; extensiones `mongodb`,
 1. En la raíz, inicia la base con `docker compose up -d`. Espera a que termine `mongo-init`. La base se expone solo en `127.0.0.1:27017`; esta configuración sin autenticación es exclusivamente para desarrollo local.
 2. En `backend`, ejecuta `composer install`, copia `.env.example` a `.env` y ejecuta `php artisan key:generate`.
 3. Confirma `DB_URI="mongodb://127.0.0.1:27017/?replicaSet=rs0"` y `DB_DATABASE=cp_gestiones`. Para Atlas usa su URI y un usuario con permisos limitados.
-4. Ejecuta `php artisan cp:install`. Crea colecciones, índices y catálogo. No se requieren tablas SQL.
-5. Ejecuta `php artisan cp:demo`. Te pedirá una contraseña para las cuentas ficticias. Para una base sin ejemplos, usa `php artisan cp:admin tu-correo nombre`.
+4. Ejecuta `php artisan cp:install`. Crea colecciones, índices, catálogo y la cuenta concentradora del banco (Q50,000,000.00 de fondos iniciales para préstamos). No se requieren tablas SQL.
+5. Ejecuta `php artisan cp:admin tu-correo "Tu nombre"` para crear el administrador. Desde el panel creas después a los operadores, a los representantes de empresa, a los clientes y sus cuentas.
 6. En `frontend`, ejecuta `npm ci` y `npm run build`.
 7. En `backend`, inicia `php -S 127.0.0.1:8001 -t public server.php`.
 8. En otra terminal, dentro de `frontend`, ejecuta `npm run preview`. Abre http://127.0.0.1:5174. Para desarrollar con recarga automática usa `npm run dev`.
-9. En una tercera terminal, dentro de `backend`, ejecuta `php artisan schedule:work` para activar planillas, eventos y cierres. Sin ese proceso, los trabajos permanecen pendientes.
+9. En una tercera terminal, dentro de `backend`, ejecuta `php artisan schedule:work` para activar eventos, el cierre diario de tarjetas (23:59) y los cobros automáticos de cuotas y tarjetas (18:00). El administrador también puede ejecutar los cobros desde el Resumen.
 
 La base de esta computadora usa el puerto **27028** para mantenerla separada de los ejercicios de clase. Su `.env` ya está configurado. Docker está preparado como alternativa, pero no se ejecutó porque Docker Desktop no estaba activo; las pruebas se hicieron contra un MongoDB local real con replica set.
 
@@ -98,24 +98,28 @@ La base de esta computadora usa el puerto **27028** para mantenerla separada de 
 4. Vuelve a Render y pon `FRONTEND_URL=https://<tu-panel>.vercel.app` (varias separadas por coma).
 5. En GitHub, *Settings > Secrets and variables > Actions > Variables*, crea `BACKEND_URL=https://<tu-api>.onrender.com`. Render gratis se suspende tras 15 minutos sin tráfico y eso detendría planillas y cierres.
 
-Los datos demo (`cp:demo`) solo funcionan en local; en línea la base empieza vacía, con el catálogo y el administrador. Los tokens para Banca y Analítica los genera el administrador en el panel → **Integraciones** → *Tokens de integración*. La guía para el equipo de Banca es [docs/GUIA-BANCA-VIRTUAL.md](docs/GUIA-BANCA-VIRTUAL.md).
+En línea la base empieza con el catálogo, la cuenta concentradora y el administrador; no hay datos de prueba (los que creó la versión anterior se eliminan solos al arrancar). Los tokens para Banca y Analítica los genera el administrador en el panel → **Integraciones** → *Tokens de integración*. La guía para el equipo de Banca es [docs/GUIA-BANCA-VIRTUAL.md](docs/GUIA-BANCA-VIRTUAL.md).
+
+## Roles
+
+| Rol | Qué puede hacer |
+| --- | --- |
+| **Administrador** | Todo el sistema. Es el único que crea usuarios y asigna roles. Aprueba gestiones (préstamos con cuotas, tarjetas con corte y pago), registra clientes con su acceso a Banca Virtual y su cuenta, empresas y colaboradores. |
+| **Operador** | Solo el módulo de operaciones: **Transacciones** (con búsqueda, filtros y orden) y **Reportes** en PDF. |
+| **Empresa** | Representante de **una** empresa: ve a sus colaboradores, carga, autoriza (se paga al instante) y descarga en PDF las planillas de su empresa. |
 
 ## Recorrido de demostración
 
-Para actualizar una base anterior, conserva su `APP_KEY`, respalda los datos y, con la API/trabajadores detenidos, ejecuta `php artisan cp:upgrade-registration`. Cifra los DPI anteriores, revisa duplicados y prepara índices sin cambiar cuentas ni saldos. Consulta la guía de registro antes de hacerlo. Los perfiles antiguos no reciben datos personales inventados ni se renumeran sus cuentas.
-
-1. Ingresa como `admin@cp.local` con tu contraseña elegida o la de `ACCESO-LOCAL.txt`.
-2. Consulta el resumen, los seis clientes y sus cuentas.
-3. Crea una solicitud de crédito. Esperará una decisión de CP Analítica. Para probar el contrato en una base ficticia usa Postman y un token del cliente `riesgos`; no existe un botón que finja una evaluación.
-4. Registra la aceptación con su referencia, inicia el trámite y emite la tarjeta. El detalle muestra la secuencia completa.
-5. Consulta una cuenta. Al repetir una petición con la misma `Idempotency-Key`, el movimiento no debe duplicarse.
-6. Para planillas, entra como `operador@cp.local`, registra beneficiarios con números de cuenta, luego entra como `aprobador@cp.local` para autorizar. El proceso programado hará la dispersión.
-
-Los perfiles demo comparten la contraseña elegida: `admin`, `gerente`, `cajero`, `auditor`, `operador` y `aprobador`, todos con dominio `@cp.local`. No comparten permisos.
+1. Como administrador, en **Clientes → Registrar cliente**, registra a una persona con contraseña de Banca Virtual y una cuenta de ahorro. Ya puede iniciar sesión en Banca Virtual con su correo.
+2. Registra a la empresa como cliente con una cuenta monetaria, deposítale fondos (**Cuentas → Depósito o retiro**) y regístrala en **Empresas**.
+3. En **Colaboradores → Asignar colaborador**, asigna a la persona del paso 1 con su puesto y salario.
+4. En **Usuarios y roles**, crea un usuario con rol **Empresa** para esa empresa. Con ese usuario, carga la planilla y autorízala: el dinero pasa de la cuenta de la empresa a la de cada colaborador en una sola operación.
+5. Cuando una gestión llegue desde Banca Virtual, ábrela en **Gestiones → Aprobar**. Para un préstamo defines monto, cuotas, tasa, día de pago y cuenta: se desembolsa desde la cuenta concentradora. Para una tarjeta defines día de corte, día de pago y la cuenta del cargo automático.
+6. En **Reportes** descarga o imprime los tres PDF: planillas por empresa, estado de cuenta de un cliente y transacciones globales.
 
 ## Pruebas
 
-Desde `backend`, ejecuta `php artisan test --compact`. Usa la conexión MongoDB configurada y bases aisladas `cp_gestiones_<pid>_test`, `cp_gestiones_registration_<pid>_test` y `cp_gestiones_ecosystem_<pid>_test`. Las pruebas comprueban el nombre antes de limpiar únicamente sus bases. Resultado actual: 46 pruebas, 506 comprobaciones.
+Desde `backend`, ejecuta `php artisan test --compact`. Usa la conexión MongoDB configurada y bases aisladas `cp_gestiones_<pid>_test`, `cp_gestiones_registration_<pid>_test` y `cp_gestiones_ecosystem_<pid>_test`. Las pruebas comprueban el nombre antes de limpiar únicamente sus bases. Resultado actual: 71 pruebas, más de 1,000 comprobaciones.
 
 Se verificaron autenticación, autorización, exactitud monetaria, reversión ante errores, idempotencia, aislamiento por empresa/cliente, bitácora, cortes, pagos y concurrencia. Consulta `docs/VALIDACION.md` para el resultado final y las limitaciones de la revisión visual.
 

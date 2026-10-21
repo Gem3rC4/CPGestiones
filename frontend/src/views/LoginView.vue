@@ -1,13 +1,13 @@
 <script setup>
 import { ref } from 'vue'
 import { ShieldCheck, ArrowRight, LockKeyhole, Layers3, Check } from 'lucide-vue-next'
-import { api, message, setToken } from '../services/api'
+import { api, message, setSession } from '../services/api'
 defineProps({ expired: Boolean })
 const emit = defineEmits(['authenticated'])
 const email = ref(''), password = ref(''), busy = ref(false), error = ref('')
 async function login() {
   busy.value = true; error.value = ''
-  try { const data = (await api.post('/auth/login', { email: email.value, password: password.value })).data.data; setToken(data.token); emit('authenticated', data) }
+  try { const data = (await api.post('/auth/login', { email: email.value, password: password.value })).data.data; setSession(data); emit('authenticated', data) }
   catch (e) { error.value = message(e) }
   finally { busy.value = false }
 }

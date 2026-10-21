@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "CP Gestiones API",
-    "version": "2.0.0",
+    "version": "3.0.0",
     "description": "Contrato de CP Gestiones. Versión 2: Banca Virtual identifica al cliente por DPI (dpi, 13 dígitos) en consultas y escrituras; cliente_ref se acepta solo por compatibilidad. El registro crea únicamente el perfil de acceso; las cuentas se abren con POST /banca/cuentas y las gestiones se solicitan con POST /banca/solicitudes. Guía: docs/GUIA-BANCA-VIRTUAL.md."
   },
   "servers": [
@@ -5855,98 +5855,6 @@
         }
       }
     },
-    "/usuarios-corporativos": {
-      "get": {
-        "operationId": "get_usuarios-corporativos",
-        "tags": [
-          "usuarios-corporativos"
-        ],
-        "summary": "get_usuarios-corporativos",
-        "description": "Consulta o gestión de usuarios-corporativos Permiso requerido: empresas.write.",
-        "responses": {
-          "200": {
-            "description": "Operación completada",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Success"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Token ausente, caducado o acceso bloqueado",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Permiso o titularidad insuficientes",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Recurso no encontrado",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Estado, fondos, versión o idempotencia en conflicto",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Datos inválidos",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Límite de peticiones",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "MongoDB no disponible",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/usuarios/{id}": {
       "patch": {
         "operationId": "usuarios_update",
@@ -7189,6 +7097,392 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "summary": "Renovar el JWT con el refresh token (rota el refresh token)",
+        "tags": [
+          "auth"
+        ],
+        "responses": {
+          "200": {
+            "description": "Respuesta {ok: true, data}"
+          },
+          "401": {
+            "description": "Sin sesión o token vencido"
+          },
+          "403": {
+            "description": "El rol no tiene permiso"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "refresh_token": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/creditos/{id}": {
+      "get": {
+        "summary": "Préstamo con su plan de cuotas",
+        "tags": [
+          "creditos"
+        ],
+        "responses": {
+          "200": {
+            "description": "Respuesta {ok: true, data}"
+          },
+          "401": {
+            "description": "Sin sesión o token vencido"
+          },
+          "403": {
+            "description": "El rol no tiene permiso"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "dpi",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/creditos/{id}/pagos": {
+      "post": {
+        "summary": "Pagar la próxima cuota o un monto",
+        "tags": [
+          "creditos"
+        ],
+        "responses": {
+          "201": {
+            "description": "Respuesta {ok: true, data}"
+          },
+          "401": {
+            "description": "Sin sesión o token vencido"
+          },
+          "403": {
+            "description": "El rol no tiene permiso"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "dpi": {
+                    "type": "string"
+                  },
+                  "origen_id": {
+                    "type": "string"
+                  },
+                  "monto": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cobros/ejecutar": {
+      "post": {
+        "summary": "Ejecutar ahora los cobros automáticos (administrador)",
+        "tags": [
+          "creditos"
+        ],
+        "responses": {
+          "200": {
+            "description": "Respuesta {ok: true, data}"
+          },
+          "401": {
+            "description": "Sin sesión o token vencido"
+          },
+          "403": {
+            "description": "El rol no tiene permiso"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        }
+      }
+    },
+    "/reportes/opciones": {
+      "get": {
+        "summary": "Opciones de filtros para reportes",
+        "tags": [
+          "reportes"
+        ],
+        "responses": {
+          "200": {
+            "description": "Respuesta {ok: true, data}"
+          },
+          "401": {
+            "description": "Sin sesión o token vencido"
+          },
+          "403": {
+            "description": "El rol no tiene permiso"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        }
+      }
+    },
+    "/reportes/planillas": {
+      "get": {
+        "summary": "Reporte de pago de planillas por empresa",
+        "tags": [
+          "reportes"
+        ],
+        "responses": {
+          "200": {
+            "description": "Respuesta {ok: true, data}"
+          },
+          "401": {
+            "description": "Sin sesión o token vencido"
+          },
+          "403": {
+            "description": "El rol no tiene permiso"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        },
+        "parameters": [
+          {
+            "name": "empresa_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "estado",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "desde",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "hasta",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/reportes/estado-cuenta": {
+      "get": {
+        "summary": "Estado de cuenta de un cliente",
+        "tags": [
+          "reportes"
+        ],
+        "responses": {
+          "200": {
+            "description": "Respuesta {ok: true, data}"
+          },
+          "401": {
+            "description": "Sin sesión o token vencido"
+          },
+          "403": {
+            "description": "El rol no tiene permiso"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        },
+        "parameters": [
+          {
+            "name": "cliente_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cuenta_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "desde",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "hasta",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/reportes/transacciones": {
+      "get": {
+        "summary": "Transacciones globales consolidadas",
+        "tags": [
+          "reportes"
+        ],
+        "responses": {
+          "200": {
+            "description": "Respuesta {ok: true, data}"
+          },
+          "401": {
+            "description": "Sin sesión o token vencido"
+          },
+          "403": {
+            "description": "El rol no tiene permiso"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        },
+        "parameters": [
+          {
+            "name": "desde",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "hasta",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tipo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/tipo-cambio": {
+      "get": {
+        "summary": "Tipo de cambio del Banco de Guatemala (API externa)",
+        "tags": [
+          "integraciones"
+        ],
+        "responses": {
+          "200": {
+            "description": "Respuesta {ok: true, data}"
+          },
+          "401": {
+            "description": "Sin sesión o token vencido"
+          },
+          "403": {
+            "description": "El rol no tiene permiso"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        }
+      }
+    },
+    "/banca/tipo-cambio": {
+      "get": {
+        "summary": "Tipo de cambio para Banca Virtual",
+        "tags": [
+          "banca"
+        ],
+        "responses": {
+          "200": {
+            "description": "Respuesta {ok: true, data}"
+          },
+          "401": {
+            "description": "Sin sesión o token vencido"
+          },
+          "403": {
+            "description": "El rol no tiene permiso"
+          },
+          "422": {
+            "description": "Datos inválidos"
           }
         }
       }

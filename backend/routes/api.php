@@ -9,19 +9,21 @@ use App\Http\Controllers\BankManagementController;
 use App\Http\Controllers\BankRegistrationController;
 use App\Http\Controllers\BankServiceController;
 use App\Http\Controllers\CardController;
+use App\Http\Controllers\CreditController;
 use App\Http\Controllers\CustomerAccessController;
 use App\Http\Controllers\CustomerAuthController;
 use App\Http\Controllers\IntegrationConnectionController;
 use App\Http\Controllers\IntegrationTokenController;
 use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\QueryController;
+use App\Http\Controllers\ReportController;
 use App\Http\Middleware\BankIntegration;
-use App\Models\User;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
-    Route::get('/health', fn () => response()->json(['ok' => true, 'name' => 'CP Gestiones', 'version' => '1.2.0']));
+    Route::get('/health', fn () => response()->json(['ok' => true, 'name' => 'CP Gestiones', 'version' => '2.0.0']));
     Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:login')->name('auth.login');
+    Route::post('/auth/refresh', [AuthController::class, 'refresh'])->middleware('throttle:login')->name('auth.refresh');
     Route::middleware(['token', 'throttle:api'])->group(function () {
         Route::prefix('banca')->middleware(BankIntegration::class)->group(function () {
             Route::post('/auth/login', [CustomerAuthController::class, 'login'])->name('banca.login')->middleware('throttle:cliente-login');
@@ -43,6 +45,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/perfil', [BankRegistrationController::class, 'profile'])->name('banca.perfil')->middleware('permit:clientes.read');
             Route::patch('/perfil/finanzas', [BankRegistrationController::class, 'updateFinancialProfile'])->name('banca.finanzas')->middleware('permit:clientes.write');
             Route::get('/resumen', [BankRegistrationController::class, 'summary'])->name('banca.resumen')->middleware(['permit:clientes.read', 'permit:cuentas.read']);
+            Route::get('/tipo-cambio', [QueryController::class, 'exchangeRate']);
         });
         Route::get('/alertas', [AlertController::class, 'index']);
         Route::post('/alertas/leidas', [AlertController::class, 'read']);
@@ -50,9 +53,9 @@ Route::prefix('v1')->group(function () {
         Route::get('/auth/me', [AuthController::class, 'me']);
         Route::post('/auth/logout', [AuthController::class, 'logout']);
         Route::get('/dashboard', [QueryController::class, 'dashboard'])->middleware('permit:dashboard.read');
-        Route::get('/usuarios-corporativos', fn () => response()->json(['ok' => true, 'data' => User::where('active', true)->whereIn('role', ['empresa_operador', 'empresa_aprobador'])->get(['id', 'name', 'role'])]))->middleware('permit:empresas.write');
+        Route::get('/tipo-cambio', [QueryController::class, 'exchangeRate']);
         foreach (['usuarios', 'clientes', 'productos', 'cuentas', 'solicitudes', 'tarjetas', 'creditos', 'empresas', 'planillas', 'bitacora', 'seguridad', 'movimientos', 'colaboradores'] as $resource) {
-            Route::get('/'.$resource, [QueryController::class, 'index'])->defaults('resource', $resource)->middleware('permit:'.(['creditos' => 'solicitudes', 'movimientos' => 'cuentas', 'colaboradores' => 'empresas'][$resource] ?? $resource).'.read');
+            Route::get('/'.$resource, [QueryController::class, 'index'])->defaults('resource', $resource)->middleware('permit:'.$resource.'.read');
         }
         $post = function ($uri, $controller, $method, $name, $permit) {
             Route::post($uri, [$controller, $method])->name($name)->middleware('permit:'.$permit);
@@ -76,8 +79,14 @@ Route::prefix('v1')->group(function () {
         Route::get('/tarjetas/{id}/estados-cuenta', [CardController::class, 'statements'])->middleware('permit:tarjetas.read');
         $post('/empresas', PayrollController::class, 'company', 'empresas.store', 'empresas.write');
         $post('/planillas', PayrollController::class, 'store', 'planillas.store', 'planillas.write');
-        $post('/colaboradores', PayrollController::class, 'collaborator', 'colaboradores.store', 'empresas.write');
-        $post('/demo/corporativo', PayrollController::class, 'demo', 'demo.corporativo', 'usuarios.write');
+        $post('/colaboradores', PayrollController::class, 'collaborator', 'colaboradores.store', 'colaboradores.write');
+        Route::get('/creditos/{id}', [CreditController::class, 'show'])->middleware('permit:creditos.read')->where('id', '[a-f0-9]{24}');
+        $post('/creditos/{id}/pagos', CreditController::class, 'pay', 'creditos.pay', 'creditos.pay');
+        Route::post('/cobros/ejecutar', [CreditController::class, 'collect'])->middleware(['permit:cobros.run', 'throttle:10,1']);
+        Route::get('/reportes/opciones', [ReportController::class, 'options']);
+        Route::get('/reportes/planillas', [ReportController::class, 'payroll'])->middleware('permit:reportes.planillas');
+        Route::get('/reportes/estado-cuenta', [ReportController::class, 'statement'])->middleware('permit:reportes.cuentas');
+        Route::get('/reportes/transacciones', [ReportController::class, 'transactions'])->middleware('permit:reportes.transacciones');
         Route::get('/clientes/{id}/acceso', [CustomerAccessController::class, 'show'])->middleware('permit:clientes.read')->where('id', '[a-f0-9]{24}');
         Route::patch('/clientes/{id}/acceso', [CustomerAccessController::class, 'update'])->name('clientes.acceso')->middleware('permit:clientes.manage')->where('id', '[a-f0-9]{24}');
         $post('/clientes/{id}/sesiones/cerrar', CustomerAccessController::class, 'closeSessions', 'clientes.sesiones', 'clientes.manage');

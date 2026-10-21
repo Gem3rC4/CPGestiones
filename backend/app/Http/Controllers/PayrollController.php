@@ -6,7 +6,7 @@ use App\Exceptions\BusinessException;
 use App\Http\Requests\OperationRequest;
 use App\Models\Account;
 use App\Models\Company;
-use App\Models\User;
+use App\Models\Customer;
 use App\Services\CorporateService;
 use App\Services\PayrollService;
 use App\Services\SecurityService;
@@ -28,11 +28,10 @@ class PayrollController extends ApiController
         return $this->mutation($r, fn ($d, $a) => $s->addCollaborator($d, $a), 201);
     }
 
-    public function demo(OperationRequest $r, CorporateService $s)
-    {
-        return $this->mutation($r, fn ($d, $a) => $s->seedDemo($d['contrasena'], $a), 201);
-    }
-
+    /**
+     * A company pays payroll from a checking account at the bank. Its representatives are users with the
+     * "empresa" role, assigned to the company when the administrator creates them.
+     */
     public function company(OperationRequest $r)
     {
         return $this->mutation($r, function ($d, $a) {
@@ -40,17 +39,10 @@ class PayrollController extends ApiController
             if ($account->system_key || $account->tipo !== 'monetaria' || $account->estado !== 'activa') {
                 throw new BusinessException('La empresa requiere una cuenta monetaria activa.', 'INVALID_ACCOUNT', 422);
             }
-            $roles = [];
-            foreach (array_unique($d['miembros']) as $id) {
-                $u = User::findOrFail($id);
-                if (! $u->active || ! str_starts_with($u->role, 'empresa_')) {
-                    throw new BusinessException('Selecciona usuarios corporativos activos.', 'INVALID_MEMBER', 422);
-                }$roles[] = $u->role;
+            if (Company::where('nit', $d['nit'])->exists() || Company::where('cuenta_id', $d['cuenta_id'])->exists()) {
+                throw new BusinessException('Ya existe una empresa con ese NIT o esa cuenta.', 'COMPANY_EXISTS', 409);
             }
-            if (! in_array('empresa_operador', $roles, true) || ! in_array('empresa_aprobador', $roles, true)) {
-                throw new BusinessException('Agrega al menos un operador y un aprobador.', 'INVALID_MEMBERS', 422);
-            }
-            $company = Company::create($d);
+            $company = Company::create($d + ['cuenta_numero' => $account->numero, 'titular_cuenta' => Customer::find($account->cliente_id)?->nombre, 'miembros' => []]);
             app(SecurityService::class)->record('empresa_creada', $a, ['empresa_id' => (string) $company->id]);
 
             return $company->toArray();

@@ -279,7 +279,7 @@ final class BankRegistrationTest extends TestCase
         self::assertSame((string) $id, $account->refresh()->cliente_id);
         self::assertSame('CP123456789012', $account->numero);
         self::assertSame(100, $account->saldo_centavos);
-        $this->getJson('/api/v1/banca/perfil?cliente_ref=legacy', $this->headers())->assertOk()->assertJsonPath('data.perfil_completo', false)->assertJsonPath('data.nombre', null);
+        $this->getJson('/api/v1/banca/perfil?cliente_ref=legacy', $this->headers())->assertOk()->assertJsonPath('data.perfil_completo', false)->assertJsonPath('data.nombre', 'Legacy')->assertJsonPath('data.fecha_nacimiento', null);
         $this->patchJson('/api/v1/banca/perfil/finanzas', ['cliente_ref' => 'legacy', 'tipo_empleo' => 'Asalariado', 'ingresos_mensuales_q' => 50, 'antiguedad_laboral_meses' => 0, 'perfil_version' => 1], $this->headers('legacy-update'))->assertConflict()->assertJsonPath('code', 'PROFILE_INCOMPLETE');
     }
 

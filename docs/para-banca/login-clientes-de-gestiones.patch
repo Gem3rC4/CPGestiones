@@ -1,0 +1,65 @@
+diff --git a/backend/banca-virtual-api/src/auth/auth.service.ts b/backend/banca-virtual-api/src/auth/auth.service.ts
+index 11b50b8..6b358ef 100644
+--- a/backend/banca-virtual-api/src/auth/auth.service.ts
++++ b/backend/banca-virtual-api/src/auth/auth.service.ts
+@@ -4,7 +4,7 @@ import { JwtService } from '@nestjs/jwt';
+ import * as bcrypt from 'bcryptjs';
+ import { Cliente } from '../clientes/clientes.schema';
+ import { ClientesService } from '../clientes/clientes.service';
+-import { blindIndex, decrypt } from '../common/crypto.util';
++import { blindIndex, decrypt, encrypt } from '../common/crypto.util';
+ import { verificarTotp } from '../common/totp.util';
+ import { CpAuthService } from '../cp/cp-auth.service';
+ import { NotificacionesService } from '../notificaciones/notificaciones.service';
+@@ -173,31 +173,41 @@ export class AuthService implements OnModuleInit {
+     return this.crearLocalDesdeCp(email, dto.password, sesion.cliente);
+   }
+ 
+-  /** Cliente que existe en CP Gestiones (p. ej. creado en agencia) y entra por primera vez a BancaVirtual. */
++  /**
++   * Cliente que existe en CP Gestiones (p. ej. creado por el banco en el panel) y entra por primera vez a BancaVirtual.
++   * Se guarda su DPI (CP lo devuelve en el login desde el contrato v3) para poder llamar al resto de APIs de CP.
++   * El cliente se lee DESPUÉS de confirmar la transacción: dentro de ella, otra conexión todavía no lo ve
++   * y respondía "Cliente no encontrado".
++   */
+   private async crearLocalDesdeCp(email: string, password: string, c: Record<string, any>): Promise<Cliente> {
+     const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+-    const nuevo = await this.db.transaction(async (tx) => {
++    const dpi = typeof c?.dpi === 'string' && /^[0-9]{13}$/.test(c.dpi) ? c.dpi : null;
++    const completo = String(c?.nombre_completo ?? '').trim();
++    const nombre = String(c?.nombre || completo.split(/\s+/)[0] || 'Cliente');
++    const apellido = String(c?.apellido ?? completo.split(/\s+/).slice(1).join(' ') ?? '');
++    const id = await this.db.transaction(async (tx) => {
+       const row = await this.db.one<{ id: string }>(
+         `INSERT INTO clientes (email, password_hash, rol, primer_nombre, primer_apellido, fecha_nacimiento,
+-                              ingresos_mensuales, tipo_empleo, antiguedad_laboral_meses)
+-         VALUES ($1, $2, 'CLIENTE', $3, $4, $5, $6, $7, $8) RETURNING id`,
++                              ingresos_mensuales, tipo_empleo, antiguedad_laboral_meses, dpi_cifrado, dpi_hash)
++         VALUES ($1, $2, 'CLIENTE', $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+         [
+           email,
+           hash,
+-          String(c?.nombre ?? 'Cliente'),
+-          String(c?.apellido ?? ''),
++          nombre,
++          apellido,
+           c?.fecha_nacimiento ?? null,
+           Number(c?.ingresos_mensuales_q ?? 0).toFixed(2),
+           c?.tipo_empleo ?? null,
+           Number(c?.antiguedad_laboral_meses ?? 0),
++          dpi ? encrypt(dpi) : null,
++          dpi ? blindIndex(dpi) : null,
+         ],
+         tx,
+       );
+-      const n = await this.clientes.obtener(row!.id);
+-      await this.cuentas.abrir(n.id, 'AHORRO', 'Mi cuenta de ahorro', tx);
+-      return n;
++      await this.cuentas.abrir(row!.id, 'AHORRO', 'Mi cuenta de ahorro', tx);
++      return row!.id;
+     });
+-    return nuevo;
++    return this.clientes.obtener(id);
+   }
+ 
+   /** Segundo paso del login cuando el cliente tiene verificación en dos pasos. */

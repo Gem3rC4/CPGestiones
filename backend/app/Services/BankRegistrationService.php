@@ -157,9 +157,12 @@ class BankRegistrationService
 
     public function profile(Customer $customer): array
     {
+        // Customers registered in the panel may only have the full name.
+        $parts = preg_split('/\s+/', trim((string) $customer->nombre), 2);
+
         return [
             'id' => (string) $customer->id, 'cliente_ref' => $customer->external_ref,
-            'nombre' => $customer->nombres, 'apellido' => $customer->apellidos, 'nombre_completo' => $customer->nombre,
+            'nombre' => $customer->nombres ?: ($parts[0] ?? null), 'apellido' => $customer->apellidos ?: ($parts[1] ?? ''), 'nombre_completo' => $customer->nombre,
             'correo_electronico' => $customer->email, 'dpi_enmascarado' => $customer->dpi_enmascarado,
             'nit' => $customer->nit, 'telefono' => $customer->telefono, 'fecha_nacimiento' => $customer->fecha_nacimiento,
             'tipo_empleo' => $customer->tipo_empleo === null ? null : ucfirst($customer->tipo_empleo),

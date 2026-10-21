@@ -110,6 +110,15 @@ class AccountService
                 'importe_centavos' => $amount, 'saldo_centavos' => (int) $account->saldo_centavos, 'saldo' => Money::format((int) $account->saldo_centavos)]]);
     }
 
+    /**
+     * The bank's master account: the single vault every outflow of the bank's own money comes from
+     * (funding, loans, credit card purchases, savings interest) and every return goes back to.
+     */
+    public function master(): Account
+    {
+        return Account::where('system_key', 'concentradora')->firstOrFail();
+    }
+
     public function ownership(array $d, string $actor): void
     {
         if ($actor === 'service:banca') {

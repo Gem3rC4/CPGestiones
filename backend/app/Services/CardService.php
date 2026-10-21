@@ -12,7 +12,6 @@ use App\Repositories\CustomerRepository;
 use App\Support\Money;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 
 class CardService
 {
@@ -32,7 +31,10 @@ class CardService
                 throw new BusinessException('El consumo supera el crédito disponible.', 'CREDIT_LIMIT');
             }
             $card->update(['principal_centavos' => $card->principal_centavos + $c]);
-            $result = ['referencia' => (string) Str::uuid(), 'estado' => 'completada'];
+            // The bank pays the merchant from the master account; the customer now owes it on the card.
+            $clearing = Account::where('system_key', 'comercios')->firstOrFail();
+            $settled = app(AccountService::class)->move((string) app(AccountService::class)->master()->id, (string) $clearing->id, $c, $actor, 'Consumo con tarjeta '.$card->referencia.': '.$d['concepto'], 'consumo_credito');
+            $result = ['referencia' => $settled['transaccion_id'], 'estado' => 'completada'];
             Movement::create(['transaccion_id' => $result['referencia'], 'tarjeta_id' => $id, 'importe_centavos' => $c, 'tipo' => 'consumo_credito', 'concepto' => $d['concepto'], 'actor' => $actor]);
             app(SecurityService::class)->record('consumo_credito', $actor, ['tarjeta_id' => $id]);
         }
@@ -56,8 +58,8 @@ class CardService
         if ($c > $debt) {
             throw new BusinessException('El pago supera la deuda pendiente.', 'PAYMENT_EXCEEDS_DEBT', 422);
         }
-        $clearing = Account::where('system_key', 'pagos_tarjeta')->firstOrFail();
-        $result = app(AccountService::class)->move((string) $source->id, (string) $clearing->id, $c, $actor, $concept.' '.$card->referencia, 'pago_tarjeta');
+        // What the customer pays on the card returns to the master account.
+        $result = app(AccountService::class)->move((string) $source->id, (string) app(AccountService::class)->master()->id, $c, $actor, $concept.' '.$card->referencia, 'pago_tarjeta');
         $interest = min($c, $card->interes_centavos);
         $card->update(['interes_centavos' => $card->interes_centavos - $interest, 'principal_centavos' => $card->principal_centavos - ($c - $interest)]);
         // Payments settle the oldest statement first; pagado_centavos keeps tracking the minimum payment.

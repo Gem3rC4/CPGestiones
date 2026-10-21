@@ -51,7 +51,8 @@ class AccountController extends ApiController
             if ($customer->system_key) {
                 throw new BusinessException('Selecciona una cuenta de cliente.', 'INVALID_ACCOUNT', 422);
             }
-            $vault = Account::where('system_key', 'caja')->firstOrFail();
+            // Funding comes out of the master account and withdrawals go back to it (double entry).
+            $vault = $s->master();
             $ids = $d['tipo'] === 'deposito' ? [(string) $vault->id, (string) $customer->id] : [(string) $customer->id, (string) $vault->id];
 
             return $s->move($ids[0], $ids[1], Money::cents($d['monto']), $a, $d['concepto'], $d['tipo']);

@@ -11,6 +11,7 @@ use App\Models\Movement;
 use App\Models\Payroll;
 use App\Models\Product;
 use App\Models\User;
+use App\Support\Money;
 use Illuminate\Support\Facades\DB;
 use MongoDB\Driver\Exception\CommandException;
 
@@ -107,6 +108,33 @@ class InstallService
             $capital = Account::where('system_key', 'capital')->firstOrFail();
             app(AccountService::class)->move((string) $capital->id, (string) $master->id, (int) config('operations.master_account_opening_cents'), 'sistema:instalacion', 'Fondos iniciales de la cuenta concentradora', 'apertura_fondos');
         }, attempts: 5);
+    }
+
+    /**
+     * Before the master account became the single vault, cash deposits came from "caja", savings interest
+     * from "intereses" and card payments stayed in "pagos_tarjeta". Their balances are settled against the
+     * master account once, so it shows every quetzal the bank has injected or recovered. Idempotent.
+     *
+     * @return array<string, string>
+     */
+    public function reconcileMasterAccount(): array
+    {
+        $done = [];
+        DB::connection('mongodb')->transaction(function () use (&$done): void {
+            $master = Account::where('system_key', 'concentradora')->firstOrFail();
+            foreach (['caja' => 'fondeos y retiros en ventanilla', 'intereses' => 'intereses de ahorro', 'pagos_tarjeta' => 'pagos de tarjetas'] as $key => $name) {
+                $account = Account::where('system_key', $key)->first();
+                $balance = (int) ($account?->saldo_centavos ?? 0);
+                if (! $account || $balance === 0) {
+                    continue;
+                }
+                [$from, $to] = $balance < 0 ? [$master, $account] : [$account, $master];
+                app(AccountService::class)->move((string) $from->id, (string) $to->id, abs($balance), 'sistema:conciliacion', 'Conciliación con la cuenta concentradora: '.$name.' anteriores', 'conciliacion_concentradora');
+                $done[$key] = Money::format(-$balance);
+            }
+        }, attempts: 5);
+
+        return $done;
     }
 
     /**

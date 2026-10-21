@@ -24,6 +24,7 @@ Artisan::command('cp:install', function (InstallService $service) {
     // without keeping the API from starting.
     $steps = [
         'Cuenta concentradora' => fn () => $service->fundMasterAccount(),
+        'Conciliación con la concentradora' => fn () => $service->reconcileMasterAccount(),
         'Limpieza de datos de prueba corporativos' => fn () => $service->purgeCorporateDemo(),
         'Migración de roles' => fn () => $service->migrateRoles(),
         'Cuentas de empresas' => fn () => $service->migrateCompanyAccounts(),

@@ -399,8 +399,9 @@ final class OperationsTest extends TestCase
         $full->update(['tipo' => 'ahorro', 'tasa_bps' => 365]);
         $account = $this->account($this->customer('savings'), 100000);
         $account->update(['tipo' => 'ahorro', 'tasa_bps' => 365]);
-        $fund = Account::where('system_key', 'intereses')->firstOrFail();
-        self::assertSame(0, $fund->saldo_centavos);
+        app(InstallService::class)->fundMasterAccount();
+        $fund = Account::where('system_key', 'concentradora')->firstOrFail();
+        $opening = (int) $fund->saldo_centavos;
         $service = app(SavingsService::class);
         $result = $service->closeDay($today);
         $service->closeDay($today);
@@ -408,22 +409,27 @@ final class OperationsTest extends TestCase
         self::assertSame([['cuenta_id' => (string) $full->id, 'codigo' => 'BALANCE_LIMIT']], array_map(fn ($p) => array_intersect_key($p, array_flip(['cuenta_id', 'codigo'])), $result['pendientes']));
         self::assertSame(Money::MAX, $full->refresh()->saldo_centavos);
         self::assertSame(100010, $account->refresh()->saldo_centavos);
-        self::assertSame(-10, $fund->refresh()->saldo_centavos, 'Interest paid is the bank expense: the counterparty goes negative.');
+        self::assertSame($opening - 10, $fund->refresh()->saldo_centavos, 'Savings interest is paid out of the master account.');
         self::assertSame(1, DailyAccrual::count());
-        self::assertSame(2, Movement::count());
+        self::assertSame(2, Movement::where('tipo', 'interes_ahorro')->count());
     }
 
-    public function test_cashier_can_deposit_on_a_fresh_install_but_customers_cannot_overdraw(): void
+    public function test_funding_and_withdrawals_move_the_master_account_with_double_entry(): void
     {
         $account = $this->account($this->customer('cash'), 0);
-        $vault = Account::where('system_key', 'caja')->firstOrFail();
-        self::assertSame(0, $vault->saldo_centavos);
+        $this->postJson('/api/v1/caja', ['cuenta_id' => (string) $account->id, 'tipo' => 'deposito', 'monto' => '1.00', 'concepto' => 'Sin fondos'], $this->headers())->assertConflict()->assertJsonPath('code', 'INSUFFICIENT_FUNDS');
+        app(InstallService::class)->fundMasterAccount();
+        $vault = Account::where('system_key', 'concentradora')->firstOrFail();
+        $opening = (int) $vault->saldo_centavos;
         $this->postJson('/api/v1/caja', ['cuenta_id' => (string) $account->id, 'tipo' => 'deposito', 'monto' => '1000.00', 'concepto' => 'Depósito inicial'], $this->headers())->assertCreated();
         $this->postJson('/api/v1/caja', ['cuenta_id' => (string) $account->id, 'tipo' => 'retiro', 'monto' => '250.00', 'concepto' => 'Retiro en ventanilla'], $this->headers())->assertCreated();
         $this->postJson('/api/v1/caja', ['cuenta_id' => (string) $account->id, 'tipo' => 'retiro', 'monto' => '750.01', 'concepto' => 'Retiro excesivo'], $this->headers())->assertConflict()->assertJsonPath('code', 'INSUFFICIENT_FUNDS');
         self::assertSame(75000, $account->refresh()->saldo_centavos);
-        self::assertSame(-75000, $vault->refresh()->saldo_centavos);
+        self::assertSame($opening - 75000, $vault->refresh()->saldo_centavos, 'The deposit left the master account and the withdrawal came back to it.');
         self::assertSame(0, (int) Movement::sum('importe_centavos'));
+        self::assertSame(0, (int) Account::sum('saldo_centavos'), 'Every balance still adds up to zero.');
+        $summary = $this->getJson('/api/v1/dashboard', $this->headers())->json('data.concentradora');
+        self::assertSame(['saldo_centavos' => $opening - 75000, 'salidas_centavos' => 100000, 'entradas_centavos' => 25000], array_intersect_key($summary, array_flip(['saldo_centavos', 'salidas_centavos', 'entradas_centavos'])));
     }
 
     public function test_outbox_retries_with_same_event_and_signs_exact_body(): void
@@ -467,18 +473,19 @@ final class OperationsTest extends TestCase
 
     public function test_global_ledger_is_staff_only_and_filters_by_movement_type(): void
     {
+        app(InstallService::class)->fundMasterAccount();
         $a = $this->account($this->customer('ledger-a'));
         $b = $this->account($this->customer('ledger-b'), 0);
         $this->postJson('/api/v1/transferencias', ['origen_id' => (string) $a->id, 'destino_id' => (string) $b->id, 'monto' => '10.00', 'concepto' => 'Movimiento global'], $this->headers())->assertCreated();
         $this->postJson('/api/v1/caja', ['cuenta_id' => (string) $b->id, 'tipo' => 'deposito', 'monto' => '5.00', 'concepto' => 'Depósito en caja'], $this->headers())->assertCreated();
         $all = $this->getJson('/api/v1/movimientos', $this->headers())->assertOk()->json('data');
-        self::assertSame(4, $all['total']);
+        self::assertSame(6, $all['total'], 'Two customer movements, two cash movements and the opening of the master account.');
         self::assertContains($a->numero, array_column($all['data'], 'cuenta_numero'));
         $this->getJson('/api/v1/movimientos?estado=deposito', $this->headers())->assertOk()->assertJsonPath('data.total', 2);
         $this->getJson('/api/v1/movimientos?cuenta_id='.$a->id, $this->headers())->assertOk()->assertJsonPath('data.total', 1);
         $this->getJson('/api/v1/movimientos', $this->headers(app(AuthService::class)->issueService('banca')))->assertForbidden();
         $this->getJson('/api/v1/movimientos', $this->headers($this->token($this->user('empresa', 'corp'))))->assertForbidden();
-        $ledger = $this->getJson('/api/v1/movimientos?orden=importe_centavos&direccion=asc', $this->headers($this->token($this->user('operador', 'ops'))))->assertOk()->json('data.data');
+        $ledger = $this->getJson('/api/v1/movimientos?estado=transferencia&orden=importe_centavos&direccion=asc', $this->headers($this->token($this->user('operador', 'ops'))))->assertOk()->json('data.data');
         self::assertSame(-1000, $ledger[0]['importe_centavos']);
         self::assertSame('Cliente ledger-a', $ledger[0]['cliente_nombre'], 'The operator sees the holder without reading the customer directory.');
     }
@@ -721,6 +728,7 @@ final class OperationsTest extends TestCase
 
     public function test_reports_return_filtered_payroll_statement_and_global_transactions(): void
     {
+        app(InstallService::class)->fundMasterAccount();
         Http::fake(['*TipoCambio.asmx' => Http::response('<fecha>21/10/2026</fecha><referencia>7.63916</referencia>'), '*' => Http::response([], 500)]);
         $holder = $this->customer('holder');
         $a = $this->account($holder, 50000);
@@ -778,6 +786,7 @@ final class OperationsTest extends TestCase
 
     public function test_corporate_banking_keeps_companies_apart_from_personal_customers(): void
     {
+        app(InstallService::class)->fundMasterAccount();
         $person = $this->customer('persona');
         $personal = $this->account($person, 0);
         $body = ['nombre' => 'Distribuidora Norte S.A.', 'razon_social' => 'Comercializadora del Norte, S.A.', 'representante_legal' => 'Ana Norte', 'nit' => '7788990', 'correo' => 'pagos@norte.test', 'producto_cuenta' => 'monetaria', 'representante_nombre' => 'Lucía Norte', 'representante_correo' => 'lucia@norte.test'];
@@ -835,6 +844,7 @@ final class OperationsTest extends TestCase
 
     public function test_banca_is_notified_of_every_balance_change_when_its_webhook_is_configured(): void
     {
+        app(InstallService::class)->fundMasterAccount();
         $customer = $this->customer('saldo');
         $account = $this->account($customer, 0);
         $deposit = fn (string $key) => $this->postJson('/api/v1/caja', ['cuenta_id' => (string) $account->id, 'tipo' => 'deposito', 'monto' => '5000.00', 'concepto' => 'Pago Quincena'], $this->headers(key: $key))->assertCreated();
@@ -847,5 +857,29 @@ final class OperationsTest extends TestCase
         self::assertSame('10000.00', $event->payload['saldo']);
         self::assertSame((string) $customer->id, $event->payload['cliente_id']);
         self::assertSame(1, OutboxEvent::where('type', 'cuenta.movimiento')->count(), 'The internal cash account is not announced.');
+    }
+
+    public function test_master_account_absorbs_earlier_cash_funding_and_pays_card_purchases(): void
+    {
+        app(InstallService::class)->fundMasterAccount();
+        $master = Account::where('system_key', 'concentradora')->firstOrFail();
+        $opening = (int) $master->saldo_centavos;
+        $company = $this->account($this->customer('empresa-antigua'), 0);
+        $cash = Account::where('system_key', 'caja')->firstOrFail();
+        // Before this version a deposit came out of the cash account and left the master account untouched.
+        DB::connection('mongodb')->transaction(fn () => app(AccountService::class)->move((string) $cash->id, (string) $company->id, 100000000, 'test', 'Fondeo antiguo', 'deposito'));
+        self::assertSame(['caja' => '1000000.00'], app(InstallService::class)->reconcileMasterAccount());
+        self::assertSame([], app(InstallService::class)->reconcileMasterAccount());
+        self::assertSame(0, $cash->refresh()->saldo_centavos);
+        self::assertSame($opening - 100000000, $master->refresh()->saldo_centavos);
+        self::assertSame(100000000, $company->refresh()->saldo_centavos);
+
+        $holder = $this->customer('tarjeta');
+        $card = Card::create(['cliente_id' => (string) $holder->id, 'solicitud_id' => 'card-vault', 'referencia' => 'CPVAULT', 'tipo' => 'credito', 'estado' => 'activa', 'limite_centavos' => 500000, 'principal_centavos' => 0, 'interes_centavos' => 0, 'policy' => ['annual_bps' => 0]]);
+        $this->postJson('/api/v1/tarjetas/'.$card->id.'/consumos', ['monto' => '300.00', 'concepto' => 'Supermercado'], $this->headers())->assertCreated();
+        self::assertSame($opening - 100000000 - 30000, $master->refresh()->saldo_centavos, 'The bank pays the merchant from the master account.');
+        $source = $this->account($holder, 50000);
+        $this->postJson('/api/v1/tarjetas/'.$card->id.'/pagos', ['origen_id' => (string) $source->id, 'monto' => '300.00'], $this->headers())->assertCreated();
+        self::assertSame($opening - 100000000, $master->refresh()->saldo_centavos, 'The card payment returns to the master account.');
     }
 }

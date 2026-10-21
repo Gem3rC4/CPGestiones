@@ -34,7 +34,7 @@ class SavingsService
                     $interest = Money::ratio((int) $a->saldo_centavos, (int) $a->tasa_bps, 3650000);
                     DailyAccrual::create(['cuenta_id' => $id, 'fecha' => $date, 'saldo_centavos' => $a->saldo_centavos, 'interes_centavos' => $interest]);
                     if ($interest > 0) {
-                        $source = Account::where('system_key', 'intereses')->firstOrFail();
+                        $source = app(AccountService::class)->master();
                         app(AccountService::class)->move((string) $source->id, $id, $interest, 'scheduler', 'Interés diario de ahorro', 'interes_ahorro');
                     }
                     $a->refresh()->update(['ultimo_devengo' => $date]);

@@ -12,6 +12,19 @@ Archivo: `backend/banca-virtual-api/src/auth/auth.service.ts`, método `crearLoc
 
 Las credenciales están bien: CP Gestiones guarda la contraseña con bcrypt y la valida en el login. No hace falta compartir la base de datos ni tokens nuevos.
 
+## Prueba reproducida (21/10/2026)
+
+Se levantó el backend de Banca Virtual del commit `5701e92` **sin modificar**, con su propio esquema PostgreSQL (`database/01…04`), conectado a CP Gestiones. Un cliente creado en el panel de Gestiones con contraseña:
+
+| Prueba | Resultado |
+| --- | --- |
+| `POST /banca/auth/login` directo en CP Gestiones | `200 ok: true` (correo y contraseña correctos) |
+| `POST /api/v1/auth/login` en Banca, código original | `404 {"message":"Cliente no encontrado"}` |
+| Mismo login en Banca **con el parche** | `200` con `accessToken`; el cliente queda en `clientes` con su DPI |
+| Segundo login con el parche | `200` (ya existe localmente) |
+
+El texto "Cliente no encontrado" no existe en CP Gestiones: solo en `clientes.service.ts` y `seguridad.service.ts` de Banca.
+
 ## La corrección (ya probada)
 
 Parche: [`login-clientes-de-gestiones.patch`](login-clientes-de-gestiones.patch)

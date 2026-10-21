@@ -205,7 +205,7 @@ class QueryController extends ApiController
             'recientes' => $recent,
             // Gestiones arrive approved by CP Analítica: the inbox only has these two stages.
             'por_estado' => collect(['en_evaluacion', 'emitida'])->map(fn ($s) => ['estado' => $s, 'cantidad' => CardApplication::where('estado', $s)->count()]),
-            'concentradora' => $master ? ['numero' => $master->numero, 'nombre' => $master->nombre, 'saldo_centavos' => (int) $master->saldo_centavos, 'desembolsado_centavos' => (int) Credit::sum('desembolsado_centavos')] : null,
+            'concentradora' => $master ? $this->masterSummary($master) : null,
             // Centralized registry: totals Gestiones administers as the core of the three systems.
             'global' => [
                 'clientes' => Customer::where('segmento', '!=', 'empresa')->count(),
@@ -236,6 +236,20 @@ class QueryController extends ApiController
                 'colaboradores' => Collaborator::count(),
             ],
         ]);
+    }
+
+    private function masterSummary(Account $master): array
+    {
+        $byType = Movement::raw(fn ($c) => $c->aggregate([
+            ['$match' => ['cuenta_id' => (string) $master->id, 'tipo' => ['$ne' => 'apertura_fondos']]],
+            ['$group' => ['_id' => '$tipo', 'salidas' => ['$sum' => ['$cond' => [['$lt' => ['$importe_centavos', 0]], ['$multiply' => ['$importe_centavos', -1]], 0]]], 'entradas' => ['$sum' => ['$cond' => [['$gt' => ['$importe_centavos', 0]], '$importe_centavos', 0]]]]],
+        ]));
+        $rows = collect($byType)->map(fn ($r): array => ['tipo' => $r['_id'], 'salidas_centavos' => (int) $r['salidas'], 'entradas_centavos' => (int) $r['entradas']])->sortByDesc('salidas_centavos')->values();
+
+        return ['numero' => $master->numero, 'nombre' => $master->nombre, 'saldo_centavos' => (int) $master->saldo_centavos,
+            'fondos_iniciales_centavos' => (int) Movement::where('cuenta_id', (string) $master->id)->where('tipo', 'apertura_fondos')->sum('importe_centavos'),
+            'salidas_centavos' => (int) $rows->sum('salidas_centavos'), 'entradas_centavos' => (int) $rows->sum('entradas_centavos'), 'por_tipo' => $rows,
+            'desembolsado_centavos' => (int) Credit::sum('desembolsado_centavos')];
     }
 
     public function exchangeRate(ExchangeRateService $rates)

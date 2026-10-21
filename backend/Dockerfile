@@ -1,9 +1,15 @@
 # Imagen de producción para Render (u otro host con Docker).
 FROM php:8.4-apache
 
+# Extensión de MongoDB con versión fija, descargada de las versiones oficiales en GitHub
+# (pecl.php.net respondió error 500 y detuvo los despliegues). PECL queda como respaldo.
+ARG MONGODB_EXT_VERSION=2.5.5
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libzip-dev libssl-dev unzip $PHPIZE_DEPS \
-    && pecl install mongodb \
+    && (curl -fsSL --retry 3 -o /tmp/mongodb.tgz "https://github.com/mongodb/mongo-php-driver/releases/download/${MONGODB_EXT_VERSION}/mongodb-${MONGODB_EXT_VERSION}.tgz" \
+        && pecl install /tmp/mongodb.tgz \
+        || pecl install "mongodb-${MONGODB_EXT_VERSION}") \
+    && rm -f /tmp/mongodb.tgz \
     && docker-php-ext-enable mongodb \
     && docker-php-ext-install zip opcache \
     && apt-get purge -y --auto-remove $PHPIZE_DEPS \

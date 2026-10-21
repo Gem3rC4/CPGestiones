@@ -42,8 +42,8 @@ onMounted(load)
         <div class="token-value"><input :value="issued.token" readonly aria-label="Token generado" @focus="$event.target.select()"><button class="secondary" type="button" @click="copy"><component :is="copied ? Check : Copy" :size="15"/>{{ copied ? 'Copiado' : 'Copiar' }}</button></div>
         <small>Se muestra <b>una sola vez</b>: el sistema guarda solo una huella. Compártelo por un medio privado; debe ir en las variables de entorno del <b>servidor</b> de ese sistema, nunca en el código del navegador ni en GitHub.</small>
       </div>
-      <div class="table-wrap"><table><thead><tr><th>SISTEMA</th><th>TERMINA EN</th><th>CREADO POR</th><th>CREADO</th><th>VENCE</th><th></th></tr></thead><tbody>
-        <tr v-for="token in tokens" :key="token.id"><td>{{ systems[token.client] || token.client }}</td><td><code>····{{ token.hint || '????' }}</code></td><td>{{ token.created_by || '—' }}</td><td>{{ date(token.created_at) }}</td><td>{{ date(token.expires_at) }}</td><td><button class="text-button danger" :disabled="busy" @click="revoke(token)">Revocar</button></td></tr>
+      <div class="table-wrap"><table class="responsive-table"><thead><tr><th>SISTEMA</th><th>TERMINA EN</th><th>CREADO POR</th><th>CREADO</th><th>VENCE</th><th></th></tr></thead><tbody>
+        <tr v-for="token in tokens" :key="token.id"><td>{{ systems[token.client] || token.client }}</td><td data-label="TERMINA EN"><code>····{{ token.hint || '????' }}</code></td><td data-label="CREADO POR">{{ token.created_by || '—' }}</td><td data-label="CREADO">{{ date(token.created_at) }}</td><td data-label="VENCE">{{ date(token.expires_at) }}</td><td class="cell-action"><button class="text-button danger" :disabled="busy" @click="revoke(token)">Revocar</button></td></tr>
       </tbody></table><p v-if="!tokens.length" class="empty-inline">{{ loading ? 'Consultando tokens…' : 'No hay tokens activos. Genera uno para conectar Banca Virtual o Analítica.' }}</p></div>
     </div>
   </section>

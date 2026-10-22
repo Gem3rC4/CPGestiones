@@ -411,6 +411,23 @@ final class BankRegistrationTest extends TestCase
         $this->getJson('/api/v1/clientes', $this->headers('list', $staff))->assertOk()->assertJsonPath('data.data.0.acceso_app', true)->assertJsonMissingPath('data.data.0.password');
     }
 
+    /**
+     * Before each gestión Banca Virtual re-sends the registration (no account number, random password) to make sure
+     * the customer exists, and continues on CUSTOMER_EXISTS. That must never be blocked by the receipt fields.
+     */
+    public function test_banca_check_before_a_gestion_gets_customer_exists_and_the_gestion_arrives(): void
+    {
+        $this->ana(null, ['password' => Hash::make('clave2026'), 'nit' => '1234567-8', 'tipo_empleo' => 'asalariado', 'ingreso_centavos' => 950000, 'antiguedad_laboral_meses' => 30]);
+        $check = ['nombre' => 'Ana', 'apellido' => 'López', 'correo_electronico' => 'ana@ejemplo.com', 'contrasena' => 'Bvx9Kq2mZtecnica7a', 'dpi' => '3068226670601', 'fecha_nacimiento' => '2003-06-12'];
+        $this->postJson('/api/v1/banca/registro', $check, $this->headers('check-01'))->assertConflict()->assertJsonPath('code', 'CUSTOMER_EXISTS');
+        self::assertTrue(Hash::check('clave2026', Customer::first()->password), 'The check never changes the password.');
+        $this->postJson('/api/v1/banca/solicitudes', ['dpi' => '3068226670601', 'producto' => 'credito-clasica', 'monto_solicitado' => '10000.00', 'nit' => '12345678', 'tipo_empleo' => 'Asalariado', 'ingresos_mensuales_q' => 9500, 'antiguedad_laboral_meses' => 30, 'gestion_ref' => '100047'], $this->headers('check-02'))
+            ->assertCreated()->assertJsonPath('data.gestion_ref', '100047');
+        // Without access yet, the account number is still required.
+        $this->ana(null, ['dpi' => '3068226670602', 'email' => 'otra@ejemplo.com']);
+        $this->postJson('/api/v1/banca/registro', ['dpi' => '3068226670602', 'correo_electronico' => 'otra@ejemplo.com'] + $check, $this->headers('check-03'))->assertUnprocessable()->assertJsonValidationErrors('numero_cuenta');
+    }
+
     public function test_gestiones_arrive_from_banca_with_the_detailed_data_and_staff_cannot_create_them(): void
     {
         $this->ana(null, ['password' => Hash::make('clave2026')]);

@@ -96,8 +96,10 @@ class BankRegistrationRequest extends BankCustomerRequest
     {
         return [
             'dpi' => ['required', 'string', 'regex:/^[0-9]{13}$/D'],
-            // The account number printed on the opening receipt: it must belong to that DPI.
-            'numero_cuenta' => ['required', 'string', 'regex:/^[0-9]{10}$/D'],
+            // The account number printed on the opening receipt: it must belong to that DPI. Checked in the service
+            // after "already has access", because Banca Virtual calls this endpoint before each gestión to confirm
+            // the customer exists and expects CUSTOMER_EXISTS.
+            'numero_cuenta' => ['sometimes', 'string', 'regex:/^[0-9]{10}$/D'],
             'cliente_ref' => ['sometimes', 'string', 'max:100', 'regex:/^[A-Za-z0-9][A-Za-z0-9_.:@-]*$/D'],
             'contrasena' => self::passwordRules(),
             'nombre' => ['required', 'string', 'max:75', "regex:/^[\p{L}\p{M}][\p{L}\p{M} '\x{2019}-]*$/uD"],

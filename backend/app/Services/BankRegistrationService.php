@@ -29,12 +29,15 @@ class BankRegistrationService
         if (! $customer) {
             throw new BusinessException('No encontramos un cliente con ese DPI en CP Gestiones. Primero el banco debe registrarte y abrirte una cuenta.', 'CUSTOMER_NOT_FOUND', 404);
         }
+        if ($customer->password) {
+            throw new BusinessException('Este DPI ya tiene acceso a Banca Virtual. Ingresa con tu correo y contraseña.', 'CUSTOMER_EXISTS', 409);
+        }
+        if (! isset($data['numero_cuenta'])) {
+            throw ValidationException::withMessages(['numero_cuenta' => 'Ingresa el número de cuenta de tu comprobante de apertura.']);
+        }
         $account = Account::where('numero', $data['numero_cuenta'])->where('cliente_id', (string) $customer->id)->whereNull('system_key')->first();
         if (! $account) {
             throw new BusinessException('El número de cuenta no pertenece al DPI ingresado. Verifícalo en tu comprobante de apertura.', 'ACCOUNT_MISMATCH', 422);
-        }
-        if ($customer->password) {
-            throw new BusinessException('Este DPI ya tiene acceso a Banca Virtual. Ingresa con tu correo y contraseña.', 'CUSTOMER_EXISTS', 409);
         }
         $referenceOwner = isset($data['cliente_ref']) ? Customer::where('external_ref', $data['cliente_ref'])->first() : null;
         if ($referenceOwner && (string) $referenceOwner->id !== (string) $customer->id) {

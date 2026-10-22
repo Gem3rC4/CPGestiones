@@ -21,13 +21,20 @@ async function save(system) {
     await api.patch(`/integraciones/conexiones/${system}`, payload)
     forms[system].secreto = ''
     await load()
-  } catch (e) { error.value = message(e) } finally { busy.value = '' }
+    return true
+  } catch (e) { error.value = message(e); return false } finally { busy.value = '' }
 }
+// Unsaved changes (a key just typed, a new URL) are saved before testing, so the test uses what is on screen.
+const unsaved = c => Boolean(forms[c.sistema]?.secreto) || (forms[c.sistema]?.url || '').trim() !== (c.url || '')
 async function test(system) {
+  const connection = connections.value.find(c => c.sistema === system)
+  if (connection && unsaved(connection) && !(await save(system))) return
   busy.value = system; error.value = ''
   try { results[system] = (await api.post(`/integraciones/conexiones/${system}/probar`)).data.data; await load() }
   catch (e) { error.value = message(e) } finally { busy.value = '' }
 }
+const missingSecret = { banca: 'Falta el secreto', banca_abonos: 'Falta la llave', riesgos: 'Falta el token' }
+const badge = c => !c.url ? ['por_configurar', 'Por configurar'] : !c.secreto_configurado ? ['por_configurar', missingSecret[c.sistema] || 'Falta el secreto'] : ['configurada', c.origen === 'panel' ? 'Configurada en el panel' : 'Configurada en el servidor']
 onMounted(load)
 </script>
 
@@ -37,10 +44,10 @@ onMounted(load)
     <div v-if="error" class="error-box connections-error" role="alert">{{ error }}</div>
     <div class="connections-grid">
       <form v-for="c in connections" :key="c.sistema" class="connection-card" @submit.prevent="save(c.sistema)">
-        <div class="connection-title"><b>{{ c.nombre }}</b><span class="badge" :class="c.url ? 'configurada' : 'por_configurar'">{{ c.url ? (c.origen === 'panel' ? 'Configurada en el panel' : 'Configurada en el servidor') : 'Por configurar' }}</span></div>
+        <div class="connection-title"><b>{{ c.nombre }}</b><span class="badge" :class="badge(c)[0]">{{ badge(c)[1] }}</span></div>
         <label>URL<input v-model="forms[c.sistema].url" type="url" required maxlength="300" :placeholder="c.sistema === 'banca' ? 'https://…/api/gestiones/webhook' : 'https://…'"><small>{{ help[c.sistema].url }}</small></label>
         <label>{{ c.sistema === 'banca' ? 'Secreto compartido' : c.sistema === 'banca_abonos' ? 'Llave de servicio (X-Service-Key)' : 'Token de CP Analítica' }}<input v-model="forms[c.sistema].secreto" type="password" minlength="16" maxlength="200" autocomplete="new-password" :placeholder="c.secreto_configurado ? '•••••••• (déjalo vacío para conservarlo)' : 'Mínimo 16 caracteres'"><small>{{ help[c.sistema].secret }}</small></label>
-        <div class="connection-actions"><button class="primary" :disabled="busy === c.sistema"><Save :size="15"/>Guardar</button><button type="button" class="secondary" :disabled="busy === c.sistema || !c.url" @click="test(c.sistema)"><PlugZap :size="15"/>Probar conexión</button></div>
+        <div class="connection-actions"><button class="primary" :disabled="busy === c.sistema"><Save :size="15"/>Guardar</button><button type="button" class="secondary" :disabled="busy === c.sistema || !forms[c.sistema]?.url" @click="test(c.sistema)"><PlugZap :size="15"/>{{ unsaved(c) ? 'Guardar y probar' : 'Probar conexión' }}</button></div>
         <p v-if="results[c.sistema] || c.ultima_prueba" class="connection-result" :class="{ ok: (results[c.sistema] || c.ultima_prueba).conectado }">
           {{ (results[c.sistema] || c.ultima_prueba).conectado ? '✓' : '✗' }} {{ (results[c.sistema] || c.ultima_prueba).mensaje }}
           <small>{{ (results[c.sistema] || c.ultima_prueba).http_status ? `HTTP ${(results[c.sistema] || c.ultima_prueba).http_status} · ` : '' }}{{ (results[c.sistema] || c.ultima_prueba).milisegundos }} ms · {{ date((results[c.sistema] || c.ultima_prueba).probado_el) }}</small>

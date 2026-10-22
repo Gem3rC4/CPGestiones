@@ -76,7 +76,9 @@ class IntegrationSettings
     {
         $config = $this->get($system);
         if (! $config['url'] || ! $config['secret']) {
-            throw new BusinessException('Primero configura la URL y el secreto de '.self::SYSTEMS[$system].'.', 'INTEGRATION_NOT_CONFIGURED', 422);
+            throw new BusinessException($system === 'banca_abonos' && $config['url']
+                ? 'Falta guardar la llave de servicio: pégala y pulsa Guardar (o Guardar y probar).'
+                : 'Primero configura la URL y el secreto de '.self::SYSTEMS[$system].' y pulsa Guardar.', 'INTEGRATION_NOT_CONFIGURED', 422);
         }
         $this->assertSafeUrl($config['url']);
         if ($system === 'banca_abonos') {

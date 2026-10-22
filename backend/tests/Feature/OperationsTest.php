@@ -191,8 +191,7 @@ final class OperationsTest extends TestCase
     public function test_bank_can_transfer_to_a_third_party_by_account_number(): void
     {
         $own = $this->account($this->customer('a'));
-        $other = $this->account($this->customer('b'), 0);
-        $other->update(['numero' => '2738729879']);
+        $other = Account::create(['cliente_id' => (string) $this->customer('b')->id, 'numero' => '2738729879', 'tipo' => 'monetaria', 'estado' => 'activa', 'moneda' => 'GTQ', 'saldo_centavos' => 0, 'tasa_bps' => 0]);
         $token = app(AuthService::class)->issueService('banca');
         $body = ['origen_id' => (string) $own->id, 'destino_numero' => '2738729879', 'monto' => '15.00', 'concepto' => 'Pago a tercero', 'cliente_ref' => 'a'];
         $this->postJson('/api/v1/transferencias', $body, $this->headers($token))->assertCreated();
@@ -700,27 +699,24 @@ final class OperationsTest extends TestCase
         self::assertNull(app(InstallService::class)->protectOriginalAdministrator(), 'Only one administrator is ever protected.');
     }
 
-    public function test_customer_created_in_gestiones_gets_app_access_account_and_can_log_in_to_banca(): void
+    public function test_customer_form_requires_the_full_file_and_never_grants_banca_access_or_accounts(): void
     {
-        $body = ['nombre' => 'David Pérez', 'email' => 'David@Credit.com', 'dpi' => '9876543219876', 'nit' => '98765', 'telefono' => '12345678', 'ingreso_mensual' => '10000.00'];
-        $this->postJson('/api/v1/clientes', $body + ['contrasena' => 'corta'], $this->headers())->assertUnprocessable()->assertJsonValidationErrors('contrasena');
-        $this->postJson('/api/v1/clientes', $body + ['producto_cuenta' => 'tarjeta'], $this->headers())->assertUnprocessable()->assertJsonValidationErrors('producto_cuenta');
+        $body = ['nombres' => 'David', 'apellidos' => 'Pérez', 'email' => 'David@Credit.com', 'dpi' => '9876543219876', 'nit' => '98765-4', 'telefono' => '1234-5678', 'fecha_nacimiento' => '1995-02-01', 'ingreso_mensual' => '10000.00', 'antiguedad_laboral_meses' => 30];
+        $this->postJson('/api/v1/clientes', ['nombre' => 'David Pérez'] + array_diff_key($body, ['nombres' => 1, 'apellidos' => 1]), $this->headers())->assertUnprocessable()->assertJsonValidationErrors(['nombres', 'apellidos']);
+        foreach ([['dpi', '98765'], ['dpi', null], ['fecha_nacimiento', null], ['antiguedad_laboral_meses', null], ['nit', 'abc'], ['telefono', 'x'], ['email', 'no-es-correo']] as [$field, $value]) {
+            $this->postJson('/api/v1/clientes', [$field => $value] + $body, $this->headers())->assertUnprocessable()->assertJsonValidationErrors($field);
+        }
+        $this->postJson('/api/v1/clientes', ['antiguedad_laboral_meses' => 400] + $body, $this->headers())->assertUnprocessable()->assertJsonValidationErrors('antiguedad_laboral_meses');
+        // Password and account fields are no longer part of the form: they are ignored.
         $created = $this->postJson('/api/v1/clientes', $body + ['contrasena' => 'clave2026', 'producto_cuenta' => 'ahorro'], $this->headers())->assertCreated()
-            ->assertJsonPath('data.acceso_app', true)->assertJsonPath('data.cuenta.tipo', 'ahorro')->assertJsonMissingPath('data.password')->json('data');
-        self::assertMatchesRegularExpression('/^[0-9]{10}$/', $created['cuenta']['numero']);
-        self::assertStringNotContainsString('clave2026', IdempotencyRecord::latest()->first()->toJson());
+            ->assertJsonPath('data.nombre', 'David Pérez')->assertJsonPath('data.nombres', 'David')->assertJsonPath('data.apellidos', 'Pérez')->assertJsonPath('data.email', 'david@credit.com')
+            ->assertJsonPath('data.nit', '98765-4')->assertJsonPath('data.ingreso_centavos', 1000000)->assertJsonPath('data.acceso_app', false)->assertJsonMissingPath('data.cuenta')->json('data');
+        self::assertSame(0, Account::where('cliente_id', $created['id'])->count());
+        $this->postJson('/api/v1/clientes', ['email' => 'otro@credit.com'] + $body, $this->headers())->assertConflict()->assertJsonPath('code', 'CUSTOMER_EXISTS')
+            ->assertJsonPath('message', 'Ya existe un cliente registrado con ese DPI. Búscalo en el directorio en lugar de crearlo otra vez.');
+        self::assertSame(1, Customer::where('email', 'david@credit.com')->count());
         $bank = app(AuthService::class)->issueService('banca');
-        $login = $this->postJson('/api/v1/banca/auth/login', ['correo_electronico' => 'david@credit.com', 'contrasena' => 'clave2026'], $this->headers($bank))->assertOk()->json('data');
-        // Banca never saw this DPI: the login gives it back so the app can call the rest of the API.
-        self::assertSame('9876543219876', $login['cliente']['dpi']);
-        $this->getJson('/api/v1/banca/resumen?dpi=9876543219876', $this->headers($bank))->assertOk()->assertJsonPath('data.cuentas.0.numero', $created['cuenta']['numero']);
-        // Or with the session alone.
-        $session = $this->headers($bank) + ['X-Cliente-Token' => $login['token_cliente']];
-        $this->getJson('/api/v1/banca/resumen', $session)->assertOk()->assertJsonPath('data.cliente.nombre_completo', 'David Pérez');
-        $this->getJson('/api/v1/cuentas', $session)->assertOk()->assertJsonCount(1, 'data.data');
-        Customer::create(['nombre' => 'Otra persona', 'dpi' => '1111222233334']);
-        $this->getJson('/api/v1/banca/resumen?dpi=1111222233334', $session)->assertForbidden();
-        $this->getJson('/api/v1/banca/resumen', $this->headers($bank))->assertUnprocessable();
+        $this->postJson('/api/v1/banca/auth/login', ['correo_electronico' => 'david@credit.com', 'contrasena' => 'clave2026'], $this->headers($bank))->assertUnauthorized();
     }
 
     public function test_loan_installments_are_paid_from_banca_and_collected_automatically(): void
@@ -943,7 +939,8 @@ final class OperationsTest extends TestCase
         // One fake for the whole test (Laravel keeps earlier stubs first); $mode chooses BancaVirtual's answer.
         $mode = 'prueba';
         $calls = [];
-        Http::fake(function ($request) use (&$mode, &$calls, $url) {
+        $luisNumber = $luisAccount->numero;
+        Http::fake(function ($request) use (&$mode, &$calls, $url, $luisNumber) {
             if ($request->url() !== $url) {
                 return Http::response([], 200);
             }
@@ -954,7 +951,8 @@ final class OperationsTest extends TestCase
                 return Http::response(['message' => 'Cuenta bloqueada'], 422);
             }
             $calls[] = $request;
-            if ($request['tipoCuenta'] === 'MONETARIA') {
+            // Luis's account predates shared numbers: BancaVirtual only finds it by DPI and type.
+            if (($request->data()['cuentaNumero'] ?? null) === $luisNumber) {
                 return Http::response(['message' => 'Cuenta no encontrada'], 404);
             }
 
@@ -973,12 +971,15 @@ final class OperationsTest extends TestCase
         $mode = 'normal';
         app(OutboxService::class)->deliver();
         self::assertSame(['enviado'], OutboxEvent::where('type', 'banca.abono')->pluck('status')->unique()->values()->all());
-        $sent = collect($calls)->filter(fn ($r) => $r['tipoCuenta'] === 'AHORRO')->values();
-        self::assertCount(2, $sent, 'Luis has a checking account here: it falls back to his BancaVirtual savings account.');
-        self::assertSame('llave-de-servicio-de-prueba-0001', $sent[0]->header('X-Service-Key')[0]);
-        self::assertEqualsCanonicalizing(['3000000000001', '3000000000002'], $sent->map(fn ($r) => $r['dpi'])->all());
-        self::assertEqualsCanonicalizing([60, 40.5], $sent->map(fn ($r) => $r['monto'])->all());
-        self::assertStringContainsString('Planilla Quincena 2', $sent[0]['concepto']);
+        $calls = collect($calls);
+        self::assertCount(3, $calls, 'Two by account number, plus Luis by DPI after the 404.');
+        self::assertSame('llave-de-servicio-de-prueba-0001', $calls[0]->header('X-Service-Key')[0]);
+        self::assertEqualsCanonicalizing([$anaAccount->numero, $luisNumber], $calls->map(fn ($r) => $r->data()['cuentaNumero'] ?? null)->filter()->values()->all());
+        $byDpi = $calls->first(fn ($r) => isset($r->data()['dpi']));
+        self::assertSame(['3000000000002', 'MONETARIA', 40.5], [$byDpi['dpi'], $byDpi['tipoCuenta'], $byDpi['monto']]);
+        self::assertEqualsCanonicalizing([60, 40.5, 40.5], $calls->map(fn ($r) => $r['monto'])->all());
+        self::assertStringContainsString('Planilla Quincena 2', $calls[0]['concepto']);
+        $calls = $calls->all();
         app(OutboxService::class)->deliver();
         self::assertCount(3, $calls, 'Delivered events are never sent again.');
 
@@ -993,5 +994,46 @@ final class OperationsTest extends TestCase
         $mode = 'normal';
         $this->postJson('/api/v1/integraciones/eventos/reintentar', [], $this->headers())->assertOk()->assertJsonPath('data.reintentados', 1)->assertJsonPath('data.enviados_ahora', 1);
         self::assertSame('enviado', $funding->refresh()->status);
+    }
+
+    public function test_opened_account_is_registered_in_banca_virtual_with_the_same_number_and_its_opening_credited_once(): void
+    {
+        app(InstallService::class)->fundMasterAccount();
+        $abonos = 'https://banca.example.test/api/v1/admin/abonos';
+        $this->patchJson('/api/v1/integraciones/conexiones/banca_abonos', ['url' => $abonos, 'secreto' => 'llave-de-servicio-de-prueba-0001'], $this->headers())->assertOk();
+        $client = $this->postJson('/api/v1/clientes', ['nombres' => 'Rosa', 'apellidos' => 'Méndez', 'email' => 'rosa@example.test', 'dpi' => '2468013579246', 'nit' => '24680-1', 'telefono' => '5555-0101', 'fecha_nacimiento' => '1988-04-09', 'ingreso_mensual' => '8000.00', 'antiguedad_laboral_meses' => 60], $this->headers())->assertCreated()->json('data');
+        $vault = Account::where('system_key', 'concentradora')->firstOrFail()->saldo_centavos;
+        $this->postJson('/api/v1/cuentas', ['cliente_id' => $client['id'], 'producto' => 'monetaria', 'monto_apertura' => '0.00'], $this->headers())->assertUnprocessable()->assertJsonValidationErrors('monto_apertura');
+        $account = $this->postJson('/api/v1/cuentas', ['cliente_id' => $client['id'], 'producto' => 'monetaria', 'monto_apertura' => '250.75'], $this->headers())->assertCreated()->json('data');
+        self::assertSame($vault - 25075, Account::where('system_key', 'concentradora')->firstOrFail()->saldo_centavos, 'The opening deposit enters through the vault.');
+        self::assertSame(['apertura_cuenta', 25075], [Movement::where('cuenta_id', $account['id'])->firstOrFail()->tipo, Movement::where('cuenta_id', $account['id'])->firstOrFail()->importe_centavos]);
+        $events = OutboxEvent::whereIn('type', ['banca.cuenta', 'banca.abono'])->orderBy('_id')->get();
+        self::assertSame(['banca.cuenta', 'banca.abono'], $events->pluck('type')->all());
+        self::assertSame([$account['numero'], 'CP-GESTIONES-APERTURAS', 25075, 'CP-'.$account['apertura_transaccion_id']], [$events[1]->payload['cuenta_numero'], $events[1]->payload['origen'], $events[1]->payload['monto_centavos'], $events[1]->payload['referencia']]);
+
+        $remote = null;
+        $calls = [];
+        Http::fake(function ($request) use (&$remote, &$calls) {
+            $calls[] = $request;
+            if (str_ends_with($request->url(), '/admin/cuentas')) {
+                return Http::response(['ok' => true, 'creada' => true, 'cuenta' => ['id' => 'b1', 'numero' => $remote ?? $request['numero'], 'tipo' => $request['tipo'], 'saldo' => 0]]);
+            }
+
+            return Http::response(['ok' => true, 'duplicado' => false, 'cuenta' => $request['cuentaNumero'], 'monto' => $request['monto'], 'saldoDespues' => $request['monto']]);
+        });
+        app(OutboxService::class)->deliver();
+        self::assertSame(['enviado', 'enviado'], OutboxEvent::whereIn('type', ['banca.cuenta', 'banca.abono'])->orderBy('_id')->pluck('status')->all());
+        self::assertSame('https://banca.example.test/api/v1/admin/cuentas', $calls[0]->url(), 'The account is registered before its opening credit.');
+        self::assertSame(['2468013579246', 'rosa@example.test', 'MONETARIA', $account['numero'], 'Rosa', 'Méndez'], [$calls[0]['dpi'], $calls[0]['correo'], $calls[0]['tipo'], $calls[0]['numero'], $calls[0]['nombre'], $calls[0]['apellido']]);
+        self::assertSame([$account['numero'], 250.75, 'CP-'.$account['apertura_transaccion_id']], [$calls[1]['cuentaNumero'], $calls[1]['monto'], $calls[1]['referencia']]);
+        self::assertSame('llave-de-servicio-de-prueba-0001', $calls[0]->header('X-Service-Key')[0]);
+
+        // BancaVirtual already had another savings account for this DPI: the mismatch is reported, never hidden.
+        $remote = '9999999999';
+        $savings = $this->postJson('/api/v1/cuentas', ['cliente_id' => $client['id'], 'producto' => 'ahorro', 'monto_apertura' => '100.00'], $this->headers())->assertCreated()->json('data');
+        app(OutboxService::class)->deliver();
+        $event = OutboxEvent::where('type', 'banca.cuenta')->where('payload.numero', $savings['numero'])->firstOrFail();
+        self::assertSame('fallido', $event->status);
+        self::assertSame('BancaVirtual ya tenía otra cuenta ahorro para este DPI (número 9999999999); no registró el número '.$savings['numero'].'.', $event->last_error);
     }
 }

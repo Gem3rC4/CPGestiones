@@ -67,6 +67,7 @@ Route::prefix('v1')->group(function () {
         $post('/cuentas', AccountController::class, 'store', 'cuentas.store', 'cuentas.write');
         Route::patch('/cuentas/{id}/estado', [AccountController::class, 'state'])->name('cuentas.state')->middleware('permit:cuentas.manage');
         Route::get('/cuentas/{id}/movimientos', [AccountController::class, 'movements'])->middleware('permit:cuentas.read');
+        Route::get('/cuentas/{id}/comprobante', [AccountController::class, 'receipt'])->middleware('permit:cuentas.read');
         $post('/transferencias', AccountController::class, 'transfer', 'transferencias.store', 'dinero.write');
         $post('/caja', AccountController::class, 'cash', 'caja.store', 'caja.write');
         $post('/solicitudes', ApplicationController::class, 'store', 'solicitudes.store', 'solicitudes.write');

@@ -18,17 +18,21 @@ class OperationRequest extends FormRequest
         $scope = ['cliente_ref' => 'sometimes|string|max:100', 'dpi' => 'sometimes|string|regex:/^[0-9]{13}$/D'];
         $roles = implode(',', config('operations.staff_roles'));
         $day = 'sometimes|nullable|integer|min:1|max:28';
+        $name = "regex:/^[\p{L}\p{M}][\p{L}\p{M} '\x{2019}.-]*$/uD";
 
         return match ($this->route()->getName()) {
             'auth.login' => ['email' => 'required|email|max:180', 'password' => 'required|string|max:200'],
             'auth.refresh' => ['refresh_token' => 'required|string|regex:/^[a-f0-9]{64}$/D'],
             'usuarios.store' => ['name' => 'required|string|max:150', 'email' => 'required|email|max:180', 'password' => 'required|string|min:12|max:72|regex:/[A-Z]/|regex:/[a-z]/|regex:/[0-9]/', 'role' => 'required|in:'.$roles, 'empresa_id' => 'required_if:role,empresa|nullable|string|regex:/^[a-f0-9]{24}$/D'],
             'usuarios.update' => ['role' => 'required|in:'.$roles, 'active' => 'required|boolean', 'empresa_id' => 'required_if:role,empresa|nullable|string|regex:/^[a-f0-9]{24}$/D'],
-            // Optional: Banca Virtual password and first account, so the customer can log in and receive payroll at once.
-            'clientes.store' => ['nombre' => 'required|string|max:150', 'email' => 'required|email|max:180', 'dpi' => 'required|digits:13', 'nit' => 'required|string|max:20', 'telefono' => 'required|string|max:20', 'fecha_nacimiento' => 'sometimes|nullable|date_format:Y-m-d|after_or_equal:1900-01-01|before_or_equal:today', 'ingreso_mensual' => $money,
-                'contrasena' => array_merge(['sometimes'], array_values(array_filter(BankRegistrationRequest::passwordRules(), fn ($rule): bool => $rule !== 'required'))), 'producto_cuenta' => 'sometimes|nullable|in:ahorro,monetaria'],
+            // The customer file every other system relies on: DPI is the unique key that links the person to Banca Virtual.
+            'clientes.store' => ['nombres' => ['required', 'string', 'max:75', $name], 'apellidos' => ['required', 'string', 'max:74', $name], 'email' => 'required|email|max:180', 'dpi' => 'required|string|regex:/^[0-9]{13}$/D',
+                'nit' => ['required', 'string', 'max:20', 'regex:/^[0-9]{1,12}-?[0-9Kk]$/D'], 'telefono' => ['required', 'string', 'regex:/^[0-9+][0-9 -]{7,19}$/D'],
+                'fecha_nacimiento' => 'required|date_format:Y-m-d|after_or_equal:1900-01-01|before_or_equal:'.now('America/Guatemala')->subYears(18)->toDateString(), 'ingreso_mensual' => $money,
+                'antiguedad_laboral_meses' => 'required|integer|min:0|max:1500'],
             'productos.update' => ['name' => 'required|string|max:120', 'active' => 'required|boolean', 'annual_bps' => 'required|integer|min:0|max:6000', 'minimum_bps' => 'required|integer|min:0|max:10000', 'minimum_floor_cents' => 'required|integer|min:0|max:1000000', 'cutoff_day' => 'required|integer|min:1|max:31', 'payment_days' => 'required|integer|min:1|max:30'],
-            'cuentas.store' => ['cliente_id' => $id, 'producto' => 'required|string|max:60', 'nombre' => 'sometimes|string|max:100'] + $scope,
+            // The opening amount (minimum Q100.00) becomes the first balance of the account.
+            'cuentas.store' => ['cliente_id' => $id, 'producto' => 'required|in:ahorro,monetaria', 'monto_apertura' => $money] + $scope,
             'cuentas.state' => ['estado' => 'required|in:activa,bloqueada', 'nota' => 'required|string|min:5|max:500'],
             'transferencias.store' => ['origen_id' => $id, 'destino_id' => 'required_without:destino_numero|prohibits:destino_numero|string|regex:/^[a-f0-9]{24}$/D', 'destino_numero' => 'required_without:destino_id|string|regex:/^[0-9]{10}$/D', 'monto' => $money, 'concepto' => 'required|string|min:3|max:160'] + $scope,
             'caja.store' => ['cuenta_id' => $id, 'monto' => $money, 'tipo' => 'required|in:deposito,retiro', 'concepto' => 'required|string|min:3|max:160'],
@@ -64,7 +68,9 @@ class OperationRequest extends FormRequest
     public function messages(): array
     {
         $passwords = match ($this->route()?->getName()) {
-            'clientes.contrasena', 'clientes.store' => BankRegistrationRequest::passwordMessages('contrasena'),
+            'clientes.contrasena' => BankRegistrationRequest::passwordMessages('contrasena'),
+            'clientes.store' => ['fecha_nacimiento.before_or_equal' => 'El cliente debe ser mayor de edad (18 años o más).', 'fecha_nacimiento.date_format' => 'Usa una fecha válida (AAAA-MM-DD).', 'nombres.regex' => 'Usa solo letras.', 'apellidos.regex' => 'Usa solo letras.', 'telefono.regex' => 'Escribe un teléfono válido, por ejemplo 5555-1234.', 'dpi.regex' => 'El DPI debe tener exactamente 13 dígitos.', 'antiguedad_laboral_meses.max' => 'Usa un número de meses válido.'],
+            'cuentas.store' => ['monto_apertura.regex' => 'Escribe el monto con hasta dos decimales, por ejemplo 100.00.', 'producto.in' => 'Selecciona cuenta de ahorro o monetaria.'],
             'usuarios.contrasena', 'empresas.store', 'empresas.usuarios', 'empresas.usuarios.contrasena' => ['contrasena.min' => 'Usa al menos 12 caracteres.', 'contrasena.regex' => 'Incluye al menos una mayúscula, una minúscula y un número.'],
             default => [],
         };

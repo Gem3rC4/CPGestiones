@@ -10,6 +10,7 @@ use App\Services\AccountService;
 use App\Services\ClientScope;
 use App\Services\SecurityService;
 use App\Support\Money;
+use Illuminate\Http\Request;
 
 class AccountController extends ApiController
 {
@@ -71,6 +72,19 @@ class AccountController extends ApiController
 
             return $account->toArray();
         });
+    }
+
+    /**
+     * Opening receipt of a personal account, for bank staff (it shows the holder's full file).
+     */
+    public function receipt(Request $r, string $id, AccountService $s)
+    {
+        if (! $r->user()) {
+            throw new BusinessException('El comprobante de apertura es exclusivo del personal del banco.', 'FORBIDDEN', 403);
+        }
+        $account = Account::whereNull('system_key')->whereNotNull('cliente_id')->findOrFail($id);
+
+        return $this->ok($s->receipt($account));
     }
 
     public function movements(string $id, ClientScope $scope)

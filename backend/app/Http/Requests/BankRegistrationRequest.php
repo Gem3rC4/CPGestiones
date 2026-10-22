@@ -29,6 +29,9 @@ class BankRegistrationRequest extends BankCustomerRequest
                 $changes['ingresos_mensuales_q'] = $income;
             }
         }
+        if (is_string($this->input('numero_cuenta'))) {
+            $changes['numero_cuenta'] = preg_replace('/[\s-]+/', '', $this->input('numero_cuenta'));
+        }
         $date = $this->input('fecha_nacimiento');
         if (is_string($date) && preg_match('/^([0-9]{2})\/([0-9]{2})\/([0-9]{4})$/D', $date, $parts)) {
             $changes['fecha_nacimiento'] = $parts[3].'-'.$parts[2].'-'.$parts[1];
@@ -87,12 +90,14 @@ class BankRegistrationRequest extends BankCustomerRequest
         return array_map(fn (array $rules): array => array_map(fn ($rule) => $rule === 'required' ? 'sometimes' : $rule, $rules), $this->financialRules());
     }
 
-    // Basic access profile only: the detailed data is requested with the first gestión.
+    // Data of the opening receipt (DPI, account number, names, e-mail, birth date) plus the new password.
     // NIT and the financial fields stay optional so the original, longer form keeps working.
     public function rules(): array
     {
         return [
             'dpi' => ['required', 'string', 'regex:/^[0-9]{13}$/D'],
+            // The account number printed on the opening receipt: it must belong to that DPI.
+            'numero_cuenta' => ['required', 'string', 'regex:/^[0-9]{10}$/D'],
             'cliente_ref' => ['sometimes', 'string', 'max:100', 'regex:/^[A-Za-z0-9][A-Za-z0-9_.:@-]*$/D'],
             'contrasena' => self::passwordRules(),
             'nombre' => ['required', 'string', 'max:75', "regex:/^[\p{L}\p{M}][\p{L}\p{M} '\x{2019}-]*$/uD"],
@@ -105,7 +110,7 @@ class BankRegistrationRequest extends BankCustomerRequest
 
     public function messages(): array
     {
-        return parent::messages() + self::passwordMessages('contrasena');
+        return parent::messages() + self::passwordMessages('contrasena') + ['numero_cuenta.required' => 'Ingresa el número de cuenta de tu comprobante de apertura.', 'numero_cuenta.regex' => 'El número de cuenta tiene 10 dígitos.'];
     }
 
     public function after(): array

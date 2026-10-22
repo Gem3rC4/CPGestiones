@@ -92,6 +92,26 @@ export async function transactionsPdf(report) {
   return { doc, name: fileName(`transacciones-${report.filtros?.desde || ''}-${report.filtros?.hasta || ''}`) }
 }
 
+// Same rows on screen and on paper, so the receipt always shows what is stored.
+export function receiptRows(r) {
+  const c = r.cliente
+  return [['Número de cuenta', r.numero_cuenta], ['Tipo de cuenta', r.tipo === 'ahorro' ? 'Cuenta de ahorro' : 'Cuenta monetaria'], ['Monto de apertura', money(r.monto_apertura_centavos)],
+    ['Nombre', c.nombres || '—'], ['Apellido', c.apellidos || '—'], ['DPI', c.dpi || '—'], ['NIT', c.nit || '—'], ['Correo electrónico', c.correo || '—'], ['Teléfono', c.telefono || '—'],
+    ['Fecha de nacimiento', onDay(c.fecha_nacimiento)], ['Ingreso mensual', c.ingreso_mensual == null ? '—' : money(Math.round(Number(c.ingreso_mensual) * 100))], ['Meses laborando', c.antiguedad_laboral_meses ?? '—']]
+}
+
+export async function receiptPdf(r) {
+  const { jsPDF, autoTable } = await libraries()
+  const doc = new jsPDF({ unit: 'pt', format: 'letter' })
+  const y = header(doc, { reporte: 'Comprobante de apertura de cuenta', generado_el: r.fecha_apertura || new Date().toISOString() }, `Cuenta ${r.tipo === 'ahorro' ? 'de ahorro' : 'monetaria'} N.º ${r.numero_cuenta} · Fecha de apertura ${when(r.fecha_apertura)}`, [])
+  autoTable(doc, { ...tableStyle, startY: y, head: [['Dato', 'Valor']], body: receiptRows(r).map(([k, v]) => [k, String(v)]), columnStyles: { 0: { fontStyle: 'bold', cellWidth: 170 } } })
+  let next = doc.lastAutoTable.finalY + 24
+  doc.setFontSize(10); doc.setTextColor(...INK)
+  for (const line of ['Para usar Banca Virtual, elige «Registrarse» e ingresa tu DPI, este número de cuenta y los datos de este', 'comprobante; ahí crearás tu contraseña. El número de cuenta no cambia y es el mismo en ambos sistemas.']) { doc.text(line, 40, next); next += 14 }
+  footer(doc)
+  return { doc, name: fileName(`comprobante-cuenta-${r.numero_cuenta}`) }
+}
+
 export function deliver({ doc, name }, mode) {
   if (mode === 'print') {
     doc.autoPrint()

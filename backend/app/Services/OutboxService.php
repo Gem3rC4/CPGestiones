@@ -18,10 +18,11 @@ class OutboxService
         $settings = app(IntegrationSettings::class);
         $targets = ['banca' => $settings->get('banca'), 'banca_abonos' => $settings->get('banca_abonos'), 'riesgos' => $settings->get('riesgos')];
         OutboxEvent::where('status', 'enviando')->where('lease_until', '<', now()->toIso8601String())->update(['status' => 'pendiente']);
-        foreach (OutboxEvent::where('status', 'pendiente')->orderBy('created_at')->limit(50)->get() as $event) {
+        // _id breaks ties in the same second: an account is always registered before its opening credit.
+        foreach (OutboxEvent::where('status', 'pendiente')->orderBy('created_at')->orderBy('_id')->limit(50)->get() as $event) {
             $system = match ($event->type) {
                 'riesgo.solicitado' => 'riesgos',
-                'banca.abono' => 'banca_abonos',
+                'banca.abono', 'banca.cuenta' => 'banca_abonos',
                 default => 'banca',
             };
             $target = $targets[$system];
@@ -40,7 +41,9 @@ class OutboxService
                 continue;
             }
             try {
-                if ($system === 'banca_abonos') {
+                if ($event->type === 'banca.cuenta') {
+                    $outcome = $this->sendAccount($event, self::accountsUrl($url), $target['secret']);
+                } elseif ($system === 'banca_abonos') {
                     $outcome = $this->sendCredit($event, $url, $target['secret']);
                 } else {
                     $this->sendEvent($event, $url, $target['secret'], $system === 'riesgos');
@@ -84,8 +87,53 @@ class OutboxService
     }
 
     /**
-     * POST /admin/abonos of BancaVirtual. The customer is located by DPI and account type (BancaVirtual has its
-     * own account numbers). The reference is unique per credited movement, so a retry never credits twice.
+     * The accounts route of BancaVirtual sits next to its abonos route (…/admin/abonos → …/admin/cuentas).
+     */
+    public static function accountsUrl(string $creditsUrl): string
+    {
+        $base = rtrim($creditsUrl, '/');
+
+        return (str_ends_with($base, '/abonos') ? substr($base, 0, -7) : dirname($base)).'/cuentas';
+    }
+
+    /**
+     * POST /admin/cuentas of BancaVirtual: registers the account opened here with the SAME number, linked to
+     * the customer's DPI and e-mail. It is idempotent there: an existing account of that type is returned.
+     */
+    private function sendAccount(OutboxEvent $event, string $url, string $key): array
+    {
+        $p = $event->payload;
+        $customer = Customer::find($p['cliente_id']);
+        $dpi = $customer?->dpi;
+        if (! is_string($dpi) || ! preg_match('/^[0-9]{13}$/D', $dpi) || ! $customer->email) {
+            return ['status' => 'rechazado', 'error' => 'El cliente no tiene DPI y correo válidos para registrarlo en BancaVirtual.'];
+        }
+        $type = ($p['cuenta_tipo'] ?? 'ahorro') === 'monetaria' ? 'MONETARIA' : 'AHORRO';
+        $response = Http::timeout(30)->connectTimeout(10)->withoutRedirecting()->acceptJson()->withHeaders(['X-Service-Key' => $key])
+            ->post($url, array_filter(['dpi' => $dpi, 'correo' => mb_strtolower($customer->email), 'tipo' => $type, 'numero' => $p['numero'],
+                'alias' => $type === 'AHORRO' ? 'Cuenta de ahorro' : 'Cuenta monetaria', 'nombre' => mb_substr((string) $customer->nombres, 0, 80) ?: null, 'apellido' => mb_substr((string) $customer->apellidos, 0, 80) ?: null]));
+        $status = $response->status();
+        $message = $this->messageOf($response);
+        if ($response->successful()) {
+            $remote = (string) $response->json('cuenta.numero');
+            if ($remote !== $p['numero']) {
+                return ['status' => 'rechazado', 'error' => 'BancaVirtual ya tenía otra cuenta '.strtolower($type).' para este DPI (número '.$remote.'); no registró el número '.$p['numero'].'.'];
+            }
+
+            return ['status' => 'enviado', 'respuesta' => ['cuenta' => $remote, 'creada' => (bool) $response->json('creada'), 'saldo' => $response->json('cuenta.saldo')]];
+        }
+
+        return match (true) {
+            $status === 401 || $status === 403 => ['status' => 'reintentar', 'error' => 'BancaVirtual rechazó la llave de servicio. Revísala en Integraciones.'],
+            in_array($status, [400, 409, 422], true) => ['status' => 'rechazado', 'error' => 'BancaVirtual no registró la cuenta'.($message ? ': '.$message : '.')],
+            default => ['status' => 'reintentar', 'error' => 'BancaVirtual respondió con un error HTTP '.$status.'.'],
+        };
+    }
+
+    /**
+     * POST /admin/abonos of BancaVirtual. The account is located by its number, which is the same in both
+     * systems; accounts opened before numbers were shared are located by DPI and account type instead.
+     * The reference is unique per credited movement, so a retry never credits twice.
      */
     private function sendCredit(OutboxEvent $event, string $url, string $key): array
     {
@@ -95,10 +143,10 @@ class OutboxService
             return ['status' => 'rechazado', 'error' => 'El cliente no tiene un DPI válido para ubicarlo en BancaVirtual.'];
         }
         $type = ($p['cuenta_tipo'] ?? 'ahorro') === 'monetaria' ? 'MONETARIA' : 'AHORRO';
-        $response = $this->postCredit($url, $key, $p, $dpi, $type);
-        // The person may only have the savings account BancaVirtual opens by default.
-        if ($response->status() === 404 && $type === 'MONETARIA') {
-            $response = $this->postCredit($url, $key, $p, $dpi, 'AHORRO');
+        $number = $p['cuenta_numero'] ?? null;
+        $response = $this->postCredit($url, $key, $p, $number ? ['cuentaNumero' => $number] : ['dpi' => $dpi, 'tipoCuenta' => $type]);
+        if ($response->status() === 404 && $number) {
+            $response = $this->postCredit($url, $key, $p, ['dpi' => $dpi, 'tipoCuenta' => $type]);
         }
         $status = $response->status();
         if ($response->successful()) {
@@ -115,10 +163,10 @@ class OutboxService
         };
     }
 
-    private function postCredit(string $url, string $key, array $p, string $dpi, string $type): Response
+    private function postCredit(string $url, string $key, array $p, array $destination): Response
     {
         return Http::timeout(30)->connectTimeout(10)->withoutRedirecting()->acceptJson()->withHeaders(['X-Service-Key' => $key])
-            ->post($url, ['dpi' => $dpi, 'tipoCuenta' => $type, 'monto' => round($p['monto_centavos'] / 100, 2), 'concepto' => $p['concepto'], 'referencia' => $p['referencia'], 'origen' => $p['origen']]);
+            ->post($url, $destination + ['monto' => round($p['monto_centavos'] / 100, 2), 'concepto' => mb_substr($p['concepto'], 0, 100), 'referencia' => $p['referencia'], 'origen' => $p['origen']]);
     }
 
     private function messageOf(Response $response): ?string

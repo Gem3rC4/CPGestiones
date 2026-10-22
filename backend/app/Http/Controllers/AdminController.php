@@ -9,8 +9,8 @@ use App\Models\Customer;
 use App\Models\Product;
 use App\Models\User;
 use App\Repositories\CustomerRepository;
-use App\Services\AccountService;
 use App\Services\AuthService;
+use App\Services\BankRegistrationService;
 use App\Services\SecurityService;
 use App\Support\Money;
 use Illuminate\Support\Facades\Hash;
@@ -77,31 +77,30 @@ class AdminController extends ApiController
     }
 
     /**
-     * A customer registered at the bank. Optionally it gets its Banca Virtual access (password) and its first
-     * savings or checking account in the same atomic operation, so it can log in and receive payroll right away.
+     * A customer registered at the bank. Accounts are opened afterwards from "Cuentas", and the customer
+     * creates their own Banca Virtual password when registering there with their DPI and account number.
      */
     public function customer(OperationRequest $r)
     {
         return $this->mutation($r, function ($d, $a) {
             $d['email'] = mb_strtolower(trim($d['email']));
-            // DPI is the key that links this branch customer to their Banca Virtual profile.
-            if (app(CustomerRepository::class)->byDpi($d['dpi']) || Customer::where('email', $d['email'])->exists()) {
-                throw new BusinessException('Ya existe un cliente con ese DPI o correo electrónico.', 'CUSTOMER_EXISTS', 409);
+            // DPI is the single key that links this customer to Banca Virtual: it can never repeat.
+            if (app(CustomerRepository::class)->byDpi($d['dpi'])) {
+                throw new BusinessException('Ya existe un cliente registrado con ese DPI. Búscalo en el directorio en lugar de crearlo otra vez.', 'CUSTOMER_EXISTS', 409);
             }
-            $password = $d['contrasena'] ?? null;
-            $accountProduct = $d['producto_cuenta'] ?? null;
-            $d['ingreso_centavos'] = Money::cents($d['ingreso_mensual'], true);
-            unset($d['ingreso_mensual'], $d['contrasena'], $d['producto_cuenta']);
-            if (empty($d['fecha_nacimiento'])) {
-                unset($d['fecha_nacimiento']);
+            if (Customer::where('email', $d['email'])->exists()) {
+                throw new BusinessException('Ya existe un cliente con ese correo electrónico.', 'CUSTOMER_EXISTS', 409);
             }
-            $names = preg_split('/\s+/', trim($d['nombre']), 2);
-            $c = Customer::create($d + ['nombres' => $names[0], 'apellidos' => $names[1] ?? '', 'perfil_version' => 1, 'origen' => 'agencia', 'active' => true, 'failed_attempts' => 0]
-                + ($password ? ['password' => Hash::make($password), 'acceso_app_desde' => now()->toIso8601String()] : []));
-            $account = $accountProduct ? app(AccountService::class)->open(['cliente_id' => (string) $c->id, 'producto' => $accountProduct], $a) : null;
-            app(SecurityService::class)->record('cliente_creado', $a, ['cliente_id' => (string) $c->id, 'acceso_app' => (bool) $password, 'cuenta' => $account['numero'] ?? null]);
+            app(BankRegistrationService::class)->assertSeniority($d['fecha_nacimiento'], (int) $d['antiguedad_laboral_meses']);
+            $names = ['nombres' => trim(preg_replace('/\s+/u', ' ', $d['nombres'])), 'apellidos' => trim(preg_replace('/\s+/u', ' ', $d['apellidos']))];
+            $c = Customer::create($names + [
+                'nombre' => $names['nombres'].' '.$names['apellidos'], 'email' => $d['email'], 'dpi' => $d['dpi'], 'nit' => mb_strtoupper($d['nit']), 'telefono' => $d['telefono'],
+                'fecha_nacimiento' => $d['fecha_nacimiento'], 'ingreso_centavos' => Money::cents($d['ingreso_mensual'], true), 'antiguedad_laboral_meses' => (int) $d['antiguedad_laboral_meses'],
+                'perfil_version' => 1, 'origen' => 'agencia', 'active' => true, 'failed_attempts' => 0,
+            ]);
+            app(SecurityService::class)->record('cliente_creado', $a, ['cliente_id' => (string) $c->id]);
 
-            return $c->refresh()->toArray() + ['cuenta' => $account];
+            return $c->refresh()->toArray();
         }, 201);
     }
 

@@ -13,6 +13,7 @@ use App\Repositories\AccountRepository;
 use App\Repositories\CustomerRepository;
 use App\Support\Money;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class AccountService
 {
@@ -24,14 +25,22 @@ class AccountService
      */
     public const COUNTERPARTY_ACCOUNTS = ['caja', 'intereses', 'capital'];
 
+    /** Minimum opening deposit of a personal account: Q100.00. */
+    public const MINIMUM_OPENING_CENTS = 10_000;
+
     public function __construct(private AccountRepository $repository) {}
 
     /**
      * Personal accounts belong to a customer (cliente_id); corporate accounts belong to a company (empresa_id).
+     * The account number is generated here, once, and never changes: Banca Virtual registers the very same
+     * number. A personal account receives its opening deposit (monto_apertura, minimum Q100.00) as its first
+     * balance, and a customer holds at most one account of each type, as Banca Virtual does.
+     * Caller must hold a MongoDB transaction when an opening amount is given.
      */
     public function open(array $d, string $actor): array
     {
-        $owner = isset($d['empresa_id']) ? ['empresa_id' => (string) Company::findOrFail($d['empresa_id'])->id] : ['cliente_id' => (string) Customer::findOrFail($d['cliente_id'])->id];
+        $customer = isset($d['empresa_id']) ? null : Customer::findOrFail($d['cliente_id']);
+        $owner = $customer ? ['cliente_id' => (string) $customer->id] : ['empresa_id' => (string) Company::findOrFail($d['empresa_id'])->id];
         $product = Product::where('code', $d['producto'])->where('active', true)->first();
         if (! $product) {
             throw new BusinessException('El producto de cuenta no está disponible. Reintenta cuando el banco lo habilite.', 'PRODUCT_UNAVAILABLE', 409);
@@ -39,10 +48,63 @@ class AccountService
         if (! in_array($product->type, ['ahorro', 'monetaria'], true)) {
             throw new BusinessException('Selecciona un producto de cuenta.', 'INVALID_PRODUCT', 422);
         }
+        $opening = isset($d['monto_apertura']) ? Money::cents($d['monto_apertura'], true) : 0;
+        if (isset($d['monto_apertura']) && $opening < self::MINIMUM_OPENING_CENTS) {
+            throw ValidationException::withMessages(['monto_apertura' => 'El monto mínimo de apertura es Q100.00.']);
+        }
+        if ($customer) {
+            $existing = Account::where('cliente_id', (string) $customer->id)->where('tipo', $product->type)->whereNull('system_key')->first();
+            if ($existing) {
+                throw new BusinessException('El cliente ya tiene una cuenta '.($product->type === 'ahorro' ? 'de ahorro' : 'monetaria').' (número '.$existing->numero.'). Cada cliente puede tener una cuenta de cada tipo.', 'ACCOUNT_EXISTS', 409);
+            }
+        }
         $account = $this->repository->create($owner + ['producto' => $product->code, 'tipo' => $product->type, 'numero' => $this->freeNumber(), 'moneda' => 'GTQ', 'saldo_centavos' => 0, 'estado' => 'activa', 'tasa_bps' => (int) $product->annual_bps, 'nombre' => $d['nombre'] ?? $product->name]);
-        app(SecurityService::class)->record('cuenta_abierta', $actor, ['cuenta_id' => (string) $account->id]);
+        app(SecurityService::class)->record('cuenta_abierta', $actor, ['cuenta_id' => (string) $account->id, 'numero' => $account->numero]);
+        if ($customer) {
+            // Registered first, so Banca Virtual already has the account when the opening credit arrives.
+            $this->queueBankAccount($account, $customer);
+        }
+        if ($opening > 0) {
+            // The opening deposit enters through the bank's vault, like any cash deposit at the counter.
+            $movement = $this->move((string) $this->master()->id, (string) $account->id, $opening, $actor, 'Depósito de apertura de cuenta '.$account->numero, 'apertura_cuenta');
+            $account->refresh()->update(['monto_apertura_centavos' => $opening, 'apertura_transaccion_id' => $movement['transaccion_id']]);
+        }
 
-        return $account->toArray();
+        return $account->refresh()->toArray();
+    }
+
+    /**
+     * Data printed on the opening receipt: the account exactly as stored and its holder's file.
+     */
+    public function receipt(Account $account): array
+    {
+        $customer = Customer::findOrFail($account->cliente_id);
+
+        return [
+            'numero_cuenta' => $account->numero, 'tipo' => $account->tipo, 'moneda' => $account->moneda,
+            'monto_apertura' => Money::format((int) $account->monto_apertura_centavos), 'monto_apertura_centavos' => (int) $account->monto_apertura_centavos,
+            'saldo' => Money::format((int) $account->saldo_centavos), 'fecha_apertura' => $account->created_at?->toIso8601String(),
+            'cliente' => [
+                'nombres' => $customer->nombres, 'apellidos' => $customer->apellidos, 'dpi' => $customer->dpi, 'nit' => $customer->nit,
+                'correo' => $customer->email, 'telefono' => $customer->telefono, 'fecha_nacimiento' => $customer->fecha_nacimiento,
+                'ingreso_mensual' => $customer->ingreso_centavos === null ? null : Money::format((int) $customer->ingreso_centavos),
+                'antiguedad_laboral_meses' => $customer->antiguedad_laboral_meses,
+            ],
+        ];
+    }
+
+    /**
+     * POST /admin/cuentas of Banca Virtual: it registers the account with the number assigned here, linked
+     * to the customer's DPI. Written in the same transaction as the account (outbox), so it is never lost.
+     */
+    private function queueBankAccount(Account $account, Customer $customer): void
+    {
+        $config = app(IntegrationSettings::class)->get('banca_abonos');
+        if (! $config['url'] || ! $config['secret']) {
+            return;
+        }
+        OutboxEvent::create(['event_id' => (string) Str::uuid(), 'type' => 'banca.cuenta', 'aggregate_id' => (string) $account->id, 'status' => 'pendiente', 'attempts' => 0,
+            'payload' => ['cliente_id' => (string) $customer->id, 'cuenta_id' => (string) $account->id, 'numero' => $account->numero, 'cuenta_tipo' => $account->tipo]]);
     }
 
     private function freeNumber(): string
@@ -120,7 +182,7 @@ class AccountService
      * transaction as the movement (outbox): it is never lost, and its reference (one per movement and person)
      * keeps BancaVirtual from crediting it twice.
      */
-    public const BANK_CREDIT_KINDS = ['planilla' => 'CP-GESTIONES-PLANILLAS', 'desembolso_prestamo' => 'CP-GESTIONES-PRESTAMOS', 'deposito' => 'CP-GESTIONES-FONDEOS'];
+    public const BANK_CREDIT_KINDS = ['apertura_cuenta' => 'CP-GESTIONES-APERTURAS', 'planilla' => 'CP-GESTIONES-PLANILLAS', 'desembolso_prestamo' => 'CP-GESTIONES-PRESTAMOS', 'deposito' => 'CP-GESTIONES-FONDEOS'];
 
     private function queueBankCredit(Account $account, string $tx, int $amount, string $concept, string $kind): void
     {
@@ -132,8 +194,8 @@ class AccountService
             return;
         }
         OutboxEvent::create(['event_id' => (string) Str::uuid(), 'type' => 'banca.abono', 'aggregate_id' => (string) $account->id, 'status' => 'pendiente', 'attempts' => 0,
-            'payload' => ['cliente_id' => $account->cliente_id, 'cuenta_id' => (string) $account->id, 'cuenta_tipo' => $account->tipo, 'monto_centavos' => $amount,
-                'concepto' => mb_substr($concept, 0, 160), 'referencia' => 'CP-'.$tx, 'origen' => self::BANK_CREDIT_KINDS[$kind], 'tipo' => $kind]]);
+            'payload' => ['cliente_id' => $account->cliente_id, 'cuenta_id' => (string) $account->id, 'cuenta_numero' => $account->numero, 'cuenta_tipo' => $account->tipo, 'monto_centavos' => $amount,
+                'concepto' => mb_substr($concept, 0, 100), 'referencia' => 'CP-'.$tx, 'origen' => self::BANK_CREDIT_KINDS[$kind], 'tipo' => $kind]]);
     }
 
     /**

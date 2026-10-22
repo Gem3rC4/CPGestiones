@@ -46,6 +46,8 @@ Route::prefix('v1')->group(function () {
             Route::patch('/perfil/finanzas', [BankRegistrationController::class, 'updateFinancialProfile'])->name('banca.finanzas')->middleware('permit:clientes.write');
             Route::get('/resumen', [BankRegistrationController::class, 'summary'])->name('banca.resumen')->middleware(['permit:clientes.read', 'permit:cuentas.read']);
             Route::get('/tipo-cambio', [QueryController::class, 'exchangeRate']);
+            // Billing cycle (cut-off and payment dates) of the customer's credit cards.
+            Route::get('/tarjetas/ciclos', [CardController::class, 'cycles'])->middleware('permit:tarjetas.read');
         });
         Route::get('/alertas', [AlertController::class, 'index']);
         Route::post('/alertas/leidas', [AlertController::class, 'read']);
@@ -78,6 +80,11 @@ Route::prefix('v1')->group(function () {
         $post('/tarjetas/{id}/pagos', CardController::class, 'pay', 'tarjetas.pay', 'tarjetas.write');
         Route::patch('/tarjetas/{id}/estado', [CardController::class, 'state'])->name('tarjetas.state')->middleware('permit:tarjetas.write');
         Route::get('/tarjetas/{id}/estados-cuenta', [CardController::class, 'statements'])->middleware('permit:tarjetas.read');
+        // Purchase authorization: approves or rejects against the available credit and logs every attempt.
+        Route::post('/tarjetas/{id}/autorizaciones', [CardController::class, 'authorizePurchase'])->name('tarjetas.autorizar')->middleware('permit:tarjetas.write')->where('id', '[a-f0-9]{24}');
+        Route::get('/tarjetas/{id}/compras', [CardController::class, 'purchases'])->middleware('permit:tarjetas.read')->where('id', '[a-f0-9]{24}');
+        Route::get('/tarjetas/{id}/ciclo', [CardController::class, 'cycle'])->middleware('permit:tarjetas.read')->where('id', '[a-f0-9]{24}');
+        Route::get('/compras-tarjeta', [CardController::class, 'allPurchases'])->middleware('permit:tarjetas.read');
         $post('/empresas', PayrollController::class, 'company', 'empresas.store', 'empresas.write');
         Route::get('/empresas/{id}', [PayrollController::class, 'companyDetail'])->middleware('permit:empresas.read')->where('id', '[a-f0-9]{24}');
         $post('/empresas/{id}/cuentas', PayrollController::class, 'companyAccount', 'empresas.cuentas', 'empresas.write');
@@ -95,6 +102,8 @@ Route::prefix('v1')->group(function () {
         Route::get('/reportes/planillas', [ReportController::class, 'payroll'])->middleware('permit:reportes.planillas');
         Route::get('/reportes/estado-cuenta', [ReportController::class, 'statement'])->middleware('permit:reportes.cuentas');
         Route::get('/reportes/transacciones', [ReportController::class, 'transactions'])->middleware('permit:reportes.transacciones');
+        Route::get('/clientes/{id}/eliminacion', [AdminController::class, 'deletionSummary'])->middleware('permit:clientes.manage')->where('id', '[a-f0-9]{24}');
+        $post('/clientes/{id}/eliminar', AdminController::class, 'deleteCustomer', 'clientes.eliminar', 'clientes.manage');
         Route::get('/clientes/{id}/acceso', [CustomerAccessController::class, 'show'])->middleware('permit:clientes.read')->where('id', '[a-f0-9]{24}');
         Route::patch('/clientes/{id}/acceso', [CustomerAccessController::class, 'update'])->name('clientes.acceso')->middleware('permit:clientes.manage')->where('id', '[a-f0-9]{24}');
         $post('/clientes/{id}/sesiones/cerrar', CustomerAccessController::class, 'closeSessions', 'clientes.sesiones', 'clientes.manage');

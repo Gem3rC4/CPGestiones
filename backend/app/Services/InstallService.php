@@ -20,7 +20,7 @@ class InstallService
     public function indexes(): void
     {
         $db = DB::connection('mongodb')->getDatabase();
-        foreach (['usuarios', 'tokens', 'clientes', 'productos', 'cuentas', 'movimientos', 'idempotencias', 'solicitudes', 'tarjetas', 'estados_cuenta', 'empresas', 'planillas', 'devengos', 'bitacora', 'seguridad', 'eventos_salida', 'sesiones_clientes', 'alertas', 'eventos_entrada', 'evaluaciones_riesgo', 'creditos', 'pagos_servicios', 'colaboradores', 'configuracion_integraciones', 'sesiones_usuarios'] as $collection) {
+        foreach (['usuarios', 'tokens', 'clientes', 'productos', 'cuentas', 'movimientos', 'idempotencias', 'solicitudes', 'tarjetas', 'estados_cuenta', 'empresas', 'planillas', 'devengos', 'bitacora', 'seguridad', 'eventos_salida', 'sesiones_clientes', 'alertas', 'eventos_entrada', 'evaluaciones_riesgo', 'creditos', 'pagos_servicios', 'colaboradores', 'configuracion_integraciones', 'sesiones_usuarios', 'compras_tarjeta'] as $collection) {
             try {
                 $db->createCollection($collection);
             } catch (CommandException $e) {
@@ -89,7 +89,7 @@ class InstallService
         foreach (['credito-personal' => 'Crédito Personal', 'credito-vehicular' => 'Crédito Vehicular', 'credito-hipotecario' => 'Préstamo Hipotecario'] as $code => $name) {
             Product::firstOrCreate(['code' => $code], ['name' => $name, 'type' => 'prestamo', 'active' => true, 'max_limit_cents' => null, 'annual_bps' => null]);
         }
-        foreach (['caja' => 'Caja de efectivo', 'comercios' => 'Liquidación de consumos', 'pagos_tarjeta' => 'Liquidación de pagos', 'intereses' => 'Gasto de intereses', 'servicios' => 'Liquidación de pago de servicios', 'capital' => 'Capital del banco', 'concentradora' => 'Cuenta Principal del Banco (concentradora)'] as $key => $name) {
+        foreach (['caja' => 'Caja de efectivo', 'comercios' => 'Liquidación de consumos', 'pagos_tarjeta' => 'Liquidación de pagos', 'intereses' => 'Gasto de intereses', 'servicios' => 'Liquidación de pago de servicios', 'capital' => 'Capital del banco', 'efectivo' => 'Efectivo recibido de clientes y empresas', 'concentradora' => 'Cuenta Principal del Banco (concentradora)'] as $key => $name) {
             Account::firstOrCreate(['system_key' => $key], ['numero' => 'INTERNA-'.$key, 'nombre' => $name, 'tipo' => 'interna', 'moneda' => 'GTQ', 'saldo_centavos' => 0, 'estado' => 'activa']);
         }
     }

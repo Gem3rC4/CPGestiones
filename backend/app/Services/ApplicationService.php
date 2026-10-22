@@ -171,10 +171,13 @@ class ApplicationService
             $d['nota'] .= ' Corte el día '.(int) $d['dia_corte'].', pago el día '.(int) $d['dia_pago'].' con cargo automático a la cuenta '.$account->numero.'.';
         }
 
-        return Card::create(['solicitud_id' => (string) $app->id, 'cliente_id' => $app->cliente_id, 'producto' => $app->producto, 'tipo' => $app->tipo, 'categoria' => $app->categoria,
+        $card = Card::create(['solicitud_id' => (string) $app->id, 'cliente_id' => $app->cliente_id, 'producto' => $app->producto, 'tipo' => $app->tipo, 'categoria' => $app->categoria,
             'cuenta_id' => $chargeAccount, 'referencia' => 'CP-'.strtoupper(bin2hex(random_bytes(6))), 'ultimos_cuatro' => (string) random_int(1000, 9999),
             'limite_centavos' => $assigned, 'principal_centavos' => 0, 'interes_centavos' => 0, 'estado' => 'activa', 'policy' => $policy,
             'emitida_el' => now()->timezone(config('operations.timezone'))->toDateString()]
             + ($app->tipo === 'credito' ? ['dia_corte' => (int) $d['dia_corte'], 'dia_pago' => (int) $d['dia_pago'], 'cargo_automatico' => true] : []));
+        app(CardService::class)->notifyCycle($card);
+
+        return $card;
     }
 }

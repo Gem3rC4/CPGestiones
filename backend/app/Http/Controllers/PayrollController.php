@@ -117,10 +117,11 @@ class PayrollController extends ApiController
             if ($account->empresa_id !== (string) Company::findOrFail($id)->id) {
                 throw new BusinessException('La cuenta no pertenece a esta empresa.', 'INVALID_ACCOUNT', 422);
             }
-            $master = (string) $accounts->master()->id;
-            [$from, $to] = $d['tipo'] === 'deposito' ? [$master, (string) $account->id] : [(string) $account->id, $master];
 
-            return $accounts->move($from, $to, Money::cents($d['monto']), $a, $d['concepto'], $d['tipo']);
+            // The company brings the money in: it is added to the vault (concentradora); a withdrawal leaves it.
+            return $d['tipo'] === 'deposito'
+                ? $accounts->cashIn((string) $account->id, Money::cents($d['monto']), $a, $d['concepto'], 'deposito')
+                : $accounts->cashOut((string) $account->id, Money::cents($d['monto']), $a, $d['concepto'], 'retiro');
         }, 201);
     }
 

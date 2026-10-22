@@ -19,11 +19,12 @@ class AccountService
 {
     /**
      * Internal accounts that stand for money entering the ledger from outside: cash received at the
-     * counter, the bank's own interest expense and the bank's capital (which funds the master account).
+     * counter, money customers and companies bring in (efectivo), the bank's own interest expense and the
+     * bank's capital (which funds the master account).
      * Their negative balance is that inflow, so the sum of
      * every balance stays zero. Customer and settlement accounts can never be overdrawn.
      */
-    public const COUNTERPARTY_ACCOUNTS = ['caja', 'intereses', 'capital'];
+    public const COUNTERPARTY_ACCOUNTS = ['caja', 'efectivo', 'intereses', 'capital'];
 
     /** Minimum opening deposit of a personal account: Q100.00. */
     public const MINIMUM_OPENING_CENTS = 10_000;
@@ -48,8 +49,8 @@ class AccountService
         if (! in_array($product->type, ['ahorro', 'monetaria'], true)) {
             throw new BusinessException('Selecciona un producto de cuenta.', 'INVALID_PRODUCT', 422);
         }
-        $opening = isset($d['monto_apertura']) ? Money::cents($d['monto_apertura'], true) : 0;
-        if (isset($d['monto_apertura']) && $opening < self::MINIMUM_OPENING_CENTS) {
+        $opening = isset($d['monto_apertura']) && $d['monto_apertura'] !== '' ? Money::cents($d['monto_apertura'], true) : 0;
+        if (isset($d['monto_apertura']) && $d['monto_apertura'] !== '' && $opening < self::MINIMUM_OPENING_CENTS) {
             throw ValidationException::withMessages(['monto_apertura' => 'El monto mínimo de apertura es Q100.00.']);
         }
         if ($customer) {
@@ -65,12 +66,49 @@ class AccountService
             $this->queueBankAccount($account, $customer);
         }
         if ($opening > 0) {
-            // The opening deposit enters through the bank's vault, like any cash deposit at the counter.
-            $movement = $this->move((string) $this->master()->id, (string) $account->id, $opening, $actor, 'Depósito de apertura de cuenta '.$account->numero, 'apertura_cuenta');
+            // Money the customer or company brings in: it becomes the account balance and is added to the vault.
+            $movement = $this->cashIn((string) $account->id, $opening, $actor, 'Depósito de apertura de cuenta '.$account->numero, 'apertura_cuenta');
             $account->refresh()->update(['monto_apertura_centavos' => $opening, 'apertura_transaccion_id' => $movement['transaccion_id']]);
         }
 
         return $account->refresh()->toArray();
+    }
+
+    /**
+     * Money that comes into the bank from outside (an opening deposit, a deposit at the counter, a company
+     * funding its account): it is credited to the account AND added to the master account, the vault that
+     * receives every deposit. Both legs come from "efectivo", so the ledger still adds up to zero.
+     * Returns the account's movement. Caller holds the transaction.
+     */
+    public function cashIn(string $accountId, int $cents, string $actor, string $concept, string $kind): array
+    {
+        $outside = (string) $this->outside()->id;
+        $movement = $this->move($outside, $accountId, $cents, $actor, $concept, $kind);
+        $this->move($outside, (string) $this->master()->id, $cents, $actor, 'Ingreso a la concentradora · '.$concept, $kind);
+
+        return $movement;
+    }
+
+    /**
+     * Money that leaves the bank (a withdrawal): debited from the account and subtracted from the vault.
+     */
+    public function cashOut(string $accountId, int $cents, string $actor, string $concept, string $kind): array
+    {
+        $outside = (string) $this->outside()->id;
+        $movement = $this->move($accountId, $outside, $cents, $actor, $concept, $kind);
+        $this->move((string) $this->master()->id, $outside, $cents, $actor, 'Salida de la concentradora · '.$concept, $kind);
+
+        return $movement;
+    }
+
+    public function cashOutAccount(): Account
+    {
+        return $this->outside();
+    }
+
+    private function outside(): Account
+    {
+        return Account::firstOrCreate(['system_key' => 'efectivo'], ['numero' => 'INTERNA-efectivo', 'nombre' => 'Efectivo recibido de clientes y empresas', 'tipo' => 'interna', 'moneda' => 'GTQ', 'saldo_centavos' => 0, 'estado' => 'activa']);
     }
 
     /**

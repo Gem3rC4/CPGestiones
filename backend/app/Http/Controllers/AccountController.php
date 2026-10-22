@@ -52,11 +52,11 @@ class AccountController extends ApiController
             if ($customer->system_key) {
                 throw new BusinessException('Selecciona una cuenta de cliente.', 'INVALID_ACCOUNT', 422);
             }
-            // Funding comes out of the master account and withdrawals go back to it (double entry).
-            $vault = $s->master();
-            $ids = $d['tipo'] === 'deposito' ? [(string) $vault->id, (string) $customer->id] : [(string) $customer->id, (string) $vault->id];
 
-            return $s->move($ids[0], $ids[1], Money::cents($d['monto']), $a, $d['concepto'], $d['tipo']);
+            // A deposit is money coming in: it is added to the vault (concentradora); a withdrawal leaves it.
+            return $d['tipo'] === 'deposito'
+                ? $s->cashIn((string) $customer->id, Money::cents($d['monto']), $a, $d['concepto'], 'deposito')
+                : $s->cashOut((string) $customer->id, Money::cents($d['monto']), $a, $d['concepto'], 'retiro');
         }, 201);
     }
 

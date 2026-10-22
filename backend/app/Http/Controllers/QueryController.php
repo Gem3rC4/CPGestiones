@@ -21,6 +21,7 @@ use App\Models\ServicePayment;
 use App\Models\Statement;
 use App\Models\User;
 use App\Repositories\OperationsRepository;
+use App\Services\CardService;
 use App\Services\ClientScope;
 use App\Services\ExchangeRateService;
 use App\Services\IntegrationSettings;
@@ -116,6 +117,10 @@ class QueryController extends ApiController
         }
         if ($resource === 'empresas') {
             $this->withCompanyBalances($page);
+        }
+        if ($resource === 'tarjetas') {
+            $cards = app(CardService::class);
+            $page->setCollection($page->getCollection()->map(fn (Card $card): array => $card->toArray() + ($card->tipo === 'credito' ? ['ciclo' => $cards->cycle($card)] : [])));
         }
         if ($resource === 'creditos') {
             $loans = app(LoanService::class);

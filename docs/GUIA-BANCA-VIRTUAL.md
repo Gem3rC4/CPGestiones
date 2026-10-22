@@ -421,6 +421,13 @@ Si el Banguat no responde se usa una fuente de respaldo; si ninguna responde vue
 
 ---
 
+### 4.20 Tarjetas: fecha de corte, fecha de pago y autorización de compras
+
+- `GET /banca/tarjetas/ciclos?dpi=…` → corte (`dia_corte`, `fecha_corte`), pago (`dia_pago`, `fecha_limite_pago`), pago pendiente y disponible de cada tarjeta de crédito. También viene en `ciclo` dentro de `GET /tarjetas?dpi=…`.
+- `POST /tarjetas/{id}/autorizaciones` con `{ dpi, monto, comercio, concepto?, referencia? }` → 201 aprobada, o 422 `LIMITE_EXCEDIDO` / `FONDOS_INSUFICIENTES` / `TARJETA_BLOQUEADA`. Todo intento queda registrado; historial en `GET /tarjetas/{id}/compras?dpi=…`.
+
+Detalle y ejemplos: [para-banca/TARJETAS-CICLO-Y-COMPRAS.md](para-banca/TARJETAS-CICLO-Y-COMPRAS.md).
+
 ## 5. Ejemplo de código (servidor en JavaScript)
 
 Funciona en funciones de servidor de Vercel, rutas API de Next.js o Node 18+:

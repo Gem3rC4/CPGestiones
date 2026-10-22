@@ -123,9 +123,11 @@ async function retryEvents(){ retrying.value=true; try { const r=(await api.post
 function navigate(key) { module.value=key;sidebar.value=false;resetQuery();detail.value=null;load() }
 function changeQuery(patch) { Object.assign(query,{page:1},patch);load() }
 async function refresh() { await loadLookups();await load() }
-function action(kind,item={}) { if(kind==='comprobante') return showReceipt(identifier(item)); if(lookupError.value) return;spec.value=formSpec(kind,item,lookups);detail.value=null }
+function action(kind,item={}) { if(kind==='comprobante') return showReceipt(identifier(item)); if(kind==='eliminar-cliente') return confirmDelete(item); if(lookupError.value) return;spec.value=formSpec(kind,item,lookups);detail.value=null }
 // Opening receipt: the account exactly as stored, with its holder's file, ready to download as PDF.
 const receipt=ref(null)
+// Deleting a customer is never blocked: the summary only decides whether the warning is shown.
+async function confirmDelete(item) { error.value=''; try { const resumen=await get(`/clientes/${identifier(item)}/eliminacion`); detail.value=null; spec.value=formSpec('eliminar-cliente',{...item,resumen},lookups) } catch(e) { error.value=message(e) } }
 async function showReceipt(accountId) { error.value=''; try { receipt.value=await get(`/cuentas/${accountId}/comprobante`); detail.value=null } catch(e) { error.value=message(e) } }
 async function openAlert(alert) {
  if(!alert.recurso) return
@@ -139,7 +141,7 @@ function open(item) { detail.value={module:module.value==='dashboard'?'solicitud
 async function saved(result, done) {
  spec.value=null
  if(done?.receipt && identifier(result)) { await showReceipt(identifier(result)); await refresh(); return }
- toast.value=done?.path==='/clientes' ? `Cliente ${result?.nombre || ''} registrado. Ahora créale su cuenta en Cuentas.` : result?.cuenta?.numero ? `Cliente registrado con su cuenta ${label(result.cuenta.tipo).toLowerCase()} ${result.cuenta.numero}${result.acceso_app ? ' y acceso a Banca Virtual' : ''}.` : result?.estado==='pagada' && result?.pagos ? `Planilla pagada: ${money(result.total_centavos)} acreditados a ${result.pagos.length} colaboradores.` : 'La operación se guardó correctamente.'
+ toast.value=result?.eliminado ? `Cliente ${result.cliente?.nombre || ''} eliminado.` : result?.codigo==='APROBADA' ? `Compra aprobada en ${result.comercio}: ${money(result.monto_centavos)}. Disponible ${money(result.disponible_centavos)}.` : done?.path==='/clientes' ? `Cliente ${result?.nombre || ''} registrado. Ahora créale su cuenta en Cuentas.` : result?.cuenta?.numero ? `Cliente registrado con su cuenta ${label(result.cuenta.tipo).toLowerCase()} ${result.cuenta.numero}${result.acceso_app ? ' y acceso a Banca Virtual' : ''}.` : result?.estado==='pagada' && result?.pagos ? `Planilla pagada: ${money(result.total_centavos)} acreditados a ${result.pagos.length} colaboradores.` : 'La operación se guardó correctamente.'
  clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.value='',7000);await refresh()
 }
 async function logout() { try {await api.post('/auth/logout')} catch {} finally {session.value=null;setSession(null);detail.value=null;spec.value=null;clearData()} }

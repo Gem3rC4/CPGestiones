@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Repositories\CustomerRepository;
 use App\Services\AuthService;
 use App\Services\BankRegistrationService;
+use App\Services\CustomerDeletionService;
 use App\Services\SecurityService;
 use App\Support\Money;
 use Illuminate\Support\Facades\Hash;
@@ -102,6 +103,19 @@ class AdminController extends ApiController
 
             return $c->refresh()->toArray();
         }, 201);
+    }
+
+    /**
+     * What the customer still has in the bank, so the panel can warn before deleting (never blocks it).
+     */
+    public function deletionSummary(string $id, CustomerDeletionService $service)
+    {
+        return $this->ok($service->summary(Customer::where('segmento', '!=', 'empresa')->findOrFail($id)));
+    }
+
+    public function deleteCustomer(OperationRequest $r, string $id, CustomerDeletionService $service)
+    {
+        return $this->mutation($r, fn ($d, $a): array => $service->delete(Customer::where('segmento', '!=', 'empresa')->findOrFail($id), $a, $d['nota'] ?? null));
     }
 
     public function product(OperationRequest $r, string $id)

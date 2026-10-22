@@ -27,7 +27,7 @@ class CompanyService
         }
         // "nombre" is the trade name shown everywhere; razon_social is the legal name for statements and reports.
         $company = Company::create(array_filter(['nombre' => $d['nombre'], 'razon_social' => $d['razon_social'] ?? $d['nombre'], 'nit' => mb_strtoupper($d['nit']), 'representante_legal' => $d['representante_legal'] ?? null, 'correo' => $d['correo'] ?? null, 'telefono' => $d['telefono'] ?? null, 'direccion' => $d['direccion'] ?? null]) + ['miembros' => [], 'segmento' => 'empresarial']);
-        $account = $this->openAccount((string) $company->id, ['producto' => $d['producto_cuenta'] ?? 'monetaria', 'nombre' => 'Cuenta de planillas'], $actor);
+        $account = $this->openAccount((string) $company->id, ['producto' => $d['producto_cuenta'] ?? 'monetaria', 'nombre' => 'Cuenta de planillas', 'monto_apertura' => $d['monto_apertura'] ?? null], $actor);
         $company->update(['cuenta_id' => $account['id'], 'cuenta_numero' => $account['numero']]);
         $representative = null;
         if (! empty($d['representante_correo'])) {
@@ -42,7 +42,7 @@ class CompanyService
     {
         $company = Company::findOrFail($companyId);
 
-        return $this->accounts->open(['empresa_id' => (string) $company->id, 'producto' => $d['producto'], 'nombre' => $d['nombre'] ?? null], $actor);
+        return $this->accounts->open(['empresa_id' => (string) $company->id, 'producto' => $d['producto'], 'nombre' => $d['nombre'] ?? null] + (isset($d['monto_apertura']) && $d['monto_apertura'] !== '' ? ['monto_apertura' => $d['monto_apertura']] : []), $actor);
     }
 
     public function createRepresentative(Company $company, array $d, string $actor): array

@@ -113,9 +113,17 @@ class PayrollService
     {
         $company = $payroll->empresa_nombre ?? Company::find($payroll->empresa_id)?->nombre;
         $payments = $payroll->pagos;
+        $accounts = app(AccountService::class);
+        $concept = 'Planilla '.$payroll->nombre.($company ? ' · '.$company : '');
         foreach ($payments as &$payment) {
-            $movement = app(AccountService::class)->move($payroll->cuenta_id, $payment['cuenta_id'], $payment['centavos'], $actor, 'Planilla '.$payroll->nombre.($company ? ' · '.$company : ''), 'planilla');
+            $movement = $accounts->move($payroll->cuenta_id, $payment['cuenta_id'], $payment['centavos'], $actor, $concept, 'planilla');
             $payment['transaccion_id'] = $movement['transaccion_id'];
+        }
+        unset($payment);
+        // Payroll is paid out of the bank (to the employees' Banca Virtual): the vault releases the total.
+        $total = array_sum(array_column($payments, 'centavos'));
+        if ($total > 0) {
+            $accounts->move((string) $accounts->master()->id, (string) $accounts->cashOutAccount()->id, $total, $actor, 'Salida de la concentradora · '.$concept, 'planilla');
         }
 
         return $payments;

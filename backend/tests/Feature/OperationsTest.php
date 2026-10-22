@@ -920,4 +920,78 @@ final class OperationsTest extends TestCase
         $this->postJson('/api/v1/tarjetas/'.$card->id.'/pagos', ['origen_id' => (string) $source->id, 'monto' => '300.00'], $this->headers())->assertCreated();
         self::assertSame($opening - 100000000, $master->refresh()->saldo_centavos, 'The card payment returns to the master account.');
     }
+
+    public function test_credits_to_people_are_sent_once_to_banca_virtual_abonos_api(): void
+    {
+        $url = 'https://banca.example.test/api/v1/admin/abonos';
+        $source = $this->account($this->customer('empresa-abonos'), 20000);
+        $company = Company::create(['nombre' => 'Abonos S.A.', 'nit' => 'ABO-1', 'cuenta_id' => (string) $source->id, 'miembros' => []]);
+        $ana = Customer::create(['nombre' => 'Ana Abono', 'dpi' => '3000000000001']);
+        $luis = Customer::create(['nombre' => 'Luis Abono', 'dpi' => '3000000000002']);
+        $anaAccount = $this->account($ana, 0);
+        $anaAccount->update(['tipo' => 'ahorro']);
+        $luisAccount = $this->account($luis, 0);
+        $body = ['empresa_id' => (string) $company->id, 'nombre' => 'Quincena', 'pagos' => [['nombre' => 'Ana', 'cuenta_numero' => $anaAccount->numero, 'monto' => '60.00'], ['nombre' => 'Luis', 'cuenta_numero' => $luisAccount->numero, 'monto' => '40.50']]];
+
+        // Without the key configured nothing is queued.
+        $first = $this->postJson('/api/v1/planillas', $body, $this->headers())->assertCreated()->json('data.id');
+        $this->postJson('/api/v1/planillas/'.$first.'/autorizar', [], $this->headers())->assertOk();
+        self::assertSame(0, OutboxEvent::where('type', 'banca.abono')->count());
+
+        $this->patchJson('/api/v1/integraciones/conexiones/banca_abonos', ['url' => $url, 'secreto' => 'llave de prueba'], $this->headers())->assertUnprocessable()->assertJsonValidationErrors('secreto');
+        $this->patchJson('/api/v1/integraciones/conexiones/banca_abonos', ['url' => $url, 'secreto' => 'llave-de-servicio-de-prueba-0001'], $this->headers())->assertOk()->assertJsonPath('data.secreto_configurado', true);
+        // One fake for the whole test (Laravel keeps earlier stubs first); $mode chooses BancaVirtual's answer.
+        $mode = 'prueba';
+        $calls = [];
+        Http::fake(function ($request) use (&$mode, &$calls, $url) {
+            if ($request->url() !== $url) {
+                return Http::response([], 200);
+            }
+            if ($mode === 'prueba') {
+                return Http::response(['message' => ['monto debe ser mayor a 0']], 422);
+            }
+            if ($mode === 'bloqueada') {
+                return Http::response(['message' => 'Cuenta bloqueada'], 422);
+            }
+            $calls[] = $request;
+            if ($request['tipoCuenta'] === 'MONETARIA') {
+                return Http::response(['message' => 'Cuenta no encontrada'], 404);
+            }
+
+            return Http::response(['ok' => true, 'duplicado' => false, 'cuenta' => '1234567890', 'monto' => $request['monto'], 'saldoDespues' => $request['monto']]);
+        });
+        $this->postJson('/api/v1/integraciones/conexiones/banca_abonos/probar', [], $this->headers())->assertOk()->assertJsonPath('data.conectado', true);
+
+        $source->refresh()->update(['saldo_centavos' => 20000]);
+        $second = $this->postJson('/api/v1/planillas', ['nombre' => 'Quincena 2'] + $body, $this->headers())->assertCreated()->json('data.id');
+        $this->postJson('/api/v1/planillas/'.$second.'/autorizar', [], $this->headers())->assertOk();
+        $events = OutboxEvent::where('type', 'banca.abono')->get();
+        self::assertCount(2, $events);
+        self::assertSame(['CP-GESTIONES-PLANILLAS'], $events->pluck('payload.origen')->unique()->values()->all());
+        self::assertCount(2, $events->pluck('payload.referencia')->unique(), 'One reference per person paid.');
+
+        $mode = 'normal';
+        app(OutboxService::class)->deliver();
+        self::assertSame(['enviado'], OutboxEvent::where('type', 'banca.abono')->pluck('status')->unique()->values()->all());
+        $sent = collect($calls)->filter(fn ($r) => $r['tipoCuenta'] === 'AHORRO')->values();
+        self::assertCount(2, $sent, 'Luis has a checking account here: it falls back to his BancaVirtual savings account.');
+        self::assertSame('llave-de-servicio-de-prueba-0001', $sent[0]->header('X-Service-Key')[0]);
+        self::assertEqualsCanonicalizing(['3000000000001', '3000000000002'], $sent->map(fn ($r) => $r['dpi'])->all());
+        self::assertEqualsCanonicalizing([60, 40.5], $sent->map(fn ($r) => $r['monto'])->all());
+        self::assertStringContainsString('Planilla Quincena 2', $sent[0]['concepto']);
+        app(OutboxService::class)->deliver();
+        self::assertCount(3, $calls, 'Delivered events are never sent again.');
+
+        // A company account never produces an abono; a refused abono stays failed until it is retried.
+        app(InstallService::class)->fundMasterAccount();
+        $this->postJson('/api/v1/caja', ['cuenta_id' => (string) $anaAccount->id, 'tipo' => 'deposito', 'monto' => '15.00', 'concepto' => 'Fondeo'], $this->headers())->assertCreated();
+        $funding = OutboxEvent::where('type', 'banca.abono')->where('payload.origen', 'CP-GESTIONES-FONDEOS')->firstOrFail();
+        $mode = 'bloqueada';
+        app(OutboxService::class)->deliver();
+        self::assertSame('fallido', $funding->refresh()->status);
+        self::assertSame('BancaVirtual no aceptó el abono: Cuenta bloqueada', $funding->last_error);
+        $mode = 'normal';
+        $this->postJson('/api/v1/integraciones/eventos/reintentar', [], $this->headers())->assertOk()->assertJsonPath('data.reintentados', 1)->assertJsonPath('data.enviados_ahora', 1);
+        self::assertSame('enviado', $funding->refresh()->status);
+    }
 }

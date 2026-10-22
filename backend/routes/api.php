@@ -104,6 +104,7 @@ Route::prefix('v1')->group(function () {
         Route::get('/integraciones', [QueryController::class, 'integrations'])->middleware('permit:integraciones.read');
         Route::get('/integraciones/tokens', [IntegrationTokenController::class, 'index'])->middleware('permit:integraciones.write');
         Route::get('/integraciones/conexiones', [IntegrationConnectionController::class, 'index'])->middleware('permit:integraciones.write');
+        Route::post('/integraciones/eventos/reintentar', [IntegrationConnectionController::class, 'retryEvents'])->middleware(['permit:integraciones.write', 'throttle:10,1']);
         Route::patch('/integraciones/conexiones/{system}', [IntegrationConnectionController::class, 'update'])->middleware('permit:integraciones.write');
         Route::post('/integraciones/conexiones/{system}/probar', [IntegrationConnectionController::class, 'test'])->middleware(['permit:integraciones.write', 'throttle:10,1']);
         Route::post('/integraciones/tokens', [IntegrationTokenController::class, 'store'])->middleware(['permit:integraciones.write', 'throttle:10,1']);

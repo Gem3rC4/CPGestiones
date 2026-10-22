@@ -102,12 +102,38 @@ class AccountService
      */
     private function notifyBank(Account $account, string $tx, int $amount, string $concept, string $kind): void
     {
-        if (! $account->cliente_id || app(IntegrationSettings::class)->get('banca')['url'] === null) {
+        if (! $account->cliente_id) {
+            return;
+        }
+        $this->queueBankCredit($account, $tx, $amount, $concept, $kind);
+        if (app(IntegrationSettings::class)->get('banca')['url'] === null) {
             return;
         }
         OutboxEvent::create(['event_id' => (string) Str::uuid(), 'type' => 'cuenta.movimiento', 'aggregate_id' => (string) $account->id, 'status' => 'pendiente', 'attempts' => 0,
             'payload' => ['cliente_id' => $account->cliente_id, 'cuenta_id' => (string) $account->id, 'numero' => $account->numero, 'transaccion_id' => $tx, 'tipo' => $kind, 'concepto' => $concept,
                 'importe_centavos' => $amount, 'saldo_centavos' => (int) $account->saldo_centavos, 'saldo' => Money::format((int) $account->saldo_centavos)]]);
+    }
+
+    /**
+     * BancaVirtual keeps its own customer accounts, so every credit Gestiones makes to a person's account
+     * (payroll, loan disbursement, funding) is announced to its abonos API. The event is written in the same
+     * transaction as the movement (outbox): it is never lost, and its reference (one per movement and person)
+     * keeps BancaVirtual from crediting it twice.
+     */
+    public const BANK_CREDIT_KINDS = ['planilla' => 'CP-GESTIONES-PLANILLAS', 'desembolso_prestamo' => 'CP-GESTIONES-PRESTAMOS', 'deposito' => 'CP-GESTIONES-FONDEOS'];
+
+    private function queueBankCredit(Account $account, string $tx, int $amount, string $concept, string $kind): void
+    {
+        if ($amount <= 0 || $account->empresa_id || ! isset(self::BANK_CREDIT_KINDS[$kind])) {
+            return;
+        }
+        $config = app(IntegrationSettings::class)->get('banca_abonos');
+        if (! $config['url'] || ! $config['secret']) {
+            return;
+        }
+        OutboxEvent::create(['event_id' => (string) Str::uuid(), 'type' => 'banca.abono', 'aggregate_id' => (string) $account->id, 'status' => 'pendiente', 'attempts' => 0,
+            'payload' => ['cliente_id' => $account->cliente_id, 'cuenta_id' => (string) $account->id, 'cuenta_tipo' => $account->tipo, 'monto_centavos' => $amount,
+                'concepto' => mb_substr($concept, 0, 160), 'referencia' => 'CP-'.$tx, 'origen' => self::BANK_CREDIT_KINDS[$kind], 'tipo' => $kind]]);
     }
 
     /**

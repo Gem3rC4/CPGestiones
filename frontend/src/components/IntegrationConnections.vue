@@ -4,6 +4,7 @@ import { Link2, PlugZap, Save } from 'lucide-vue-next'
 import { api, get, message, date } from '../services/api'
 const help = {
   banca: { url: 'URL del servidor de Banca Virtual que recibirá los avisos (webhook), por ejemplo https://banca-virtual-five.vercel.app/api/gestiones/webhook', secret: 'Secreto compartido para firmar los avisos (HMAC). Tu compañero usa el mismo valor para verificarlos.' },
+  banca_abonos: { url: 'Ruta de BancaVirtual que acredita los pagos en sus cuentas (planillas, préstamos y fondeos). Ya viene puesta: https://bancavirtual-kp9z.onrender.com/api/v1/admin/abonos', secret: 'Llave de servicio (X-Service-Key) que te dio tu compañero. Se guarda cifrada y nunca se vuelve a mostrar. "Probar" no acredita dinero.' },
   riesgos: { url: 'URL de CP Analítica que recibirá las solicitudes de evaluación (opcional en el flujo actual).', secret: 'Token que entregó CP Analítica para aceptar las llamadas.' },
 }
 const connections = ref([]), forms = reactive({}), busy = ref(''), error = ref(''), results = reactive({})
@@ -38,7 +39,7 @@ onMounted(load)
       <form v-for="c in connections" :key="c.sistema" class="connection-card" @submit.prevent="save(c.sistema)">
         <div class="connection-title"><b>{{ c.nombre }}</b><span class="badge" :class="c.url ? 'configurada' : 'por_configurar'">{{ c.url ? (c.origen === 'panel' ? 'Configurada en el panel' : 'Configurada en el servidor') : 'Por configurar' }}</span></div>
         <label>URL<input v-model="forms[c.sistema].url" type="url" required maxlength="300" :placeholder="c.sistema === 'banca' ? 'https://…/api/gestiones/webhook' : 'https://…'"><small>{{ help[c.sistema].url }}</small></label>
-        <label>{{ c.sistema === 'banca' ? 'Secreto compartido' : 'Token de CP Analítica' }}<input v-model="forms[c.sistema].secreto" type="password" minlength="16" maxlength="200" autocomplete="new-password" :placeholder="c.secreto_configurado ? '•••••••• (déjalo vacío para conservarlo)' : 'Mínimo 16 caracteres'"><small>{{ help[c.sistema].secret }}</small></label>
+        <label>{{ c.sistema === 'banca' ? 'Secreto compartido' : c.sistema === 'banca_abonos' ? 'Llave de servicio (X-Service-Key)' : 'Token de CP Analítica' }}<input v-model="forms[c.sistema].secreto" type="password" minlength="16" maxlength="200" autocomplete="new-password" :placeholder="c.secreto_configurado ? '•••••••• (déjalo vacío para conservarlo)' : 'Mínimo 16 caracteres'"><small>{{ help[c.sistema].secret }}</small></label>
         <div class="connection-actions"><button class="primary" :disabled="busy === c.sistema"><Save :size="15"/>Guardar</button><button type="button" class="secondary" :disabled="busy === c.sistema || !c.url" @click="test(c.sistema)"><PlugZap :size="15"/>Probar conexión</button></div>
         <p v-if="results[c.sistema] || c.ultima_prueba" class="connection-result" :class="{ ok: (results[c.sistema] || c.ultima_prueba).conectado }">
           {{ (results[c.sistema] || c.ultima_prueba).conectado ? '✓' : '✗' }} {{ (results[c.sistema] || c.ultima_prueba).mensaje }}

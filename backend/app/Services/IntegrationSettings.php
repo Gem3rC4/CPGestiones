@@ -14,7 +14,9 @@ use Illuminate\Support\Str;
  */
 class IntegrationSettings
 {
-    public const SYSTEMS = ['banca' => 'CP Banca Virtual', 'riesgos' => 'CP Analítica'];
+    public const SYSTEMS = ['banca' => 'CP Banca Virtual', 'banca_abonos' => 'Abonos a cuentas de BancaVirtual', 'riesgos' => 'CP Analítica'];
+
+    private const ENV = ['banca' => ['operations.bank_url', 'operations.bank_secret'], 'banca_abonos' => ['operations.bank_credits_url', 'operations.bank_credits_key'], 'riesgos' => ['operations.risk_url', 'operations.risk_token']];
 
     /**
      * @return array{url: ?string, secret: ?string, source: ?string}
@@ -25,8 +27,9 @@ class IntegrationSettings
         if ($stored && $stored->url) {
             return ['url' => $stored->url, 'secret' => $stored->getRawOriginal('secreto') ? Crypt::decryptString($stored->getRawOriginal('secreto')) : null, 'source' => 'panel'];
         }
-        $url = config($system === 'banca' ? 'operations.bank_url' : 'operations.risk_url');
-        $secret = config($system === 'banca' ? 'operations.bank_secret' : 'operations.risk_token');
+        [$urlKey, $secretKey] = self::ENV[$system];
+        $url = config($urlKey);
+        $secret = config($secretKey);
 
         return ['url' => $url ?: null, 'secret' => $secret ?: null, 'source' => $url ? 'entorno' : null];
     }
@@ -53,7 +56,11 @@ class IntegrationSettings
             $setting->secreto = Crypt::encryptString($data['secreto']);
         }
         if (! $setting->getAttribute('secreto') && ! $this->get($system)['secret']) {
-            throw new BusinessException($system === 'banca' ? 'Indica el secreto compartido para firmar los avisos.' : 'Indica el token que entregó CP Analítica.', 'SECRET_REQUIRED', 422);
+            throw new BusinessException(match ($system) {
+                'banca' => 'Indica el secreto compartido para firmar los avisos.',
+                'banca_abonos' => 'Indica la llave de servicio (X-Service-Key) de BancaVirtual.',
+                default => 'Indica el token que entregó CP Analítica.',
+            }, 'SECRET_REQUIRED', 422);
         }
         $setting->actualizado_por = $actor;
         $setting->save();
@@ -72,6 +79,9 @@ class IntegrationSettings
             throw new BusinessException('Primero configura la URL y el secreto de '.self::SYSTEMS[$system].'.', 'INTEGRATION_NOT_CONFIGURED', 422);
         }
         $this->assertSafeUrl($config['url']);
+        if ($system === 'banca_abonos') {
+            return $this->testCredits($config, $actor);
+        }
         $body = json_encode(['event_id' => (string) Str::uuid(), 'type' => 'conexion.prueba', 'data' => ['origen' => 'CP Gestiones', 'enviado_el' => now()->toIso8601String()]], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
         $timestamp = (string) time();
         $request = Http::timeout(15)->connectTimeout(5)->withoutRedirecting()->acceptJson();
@@ -89,6 +99,34 @@ class IntegrationSettings
         $result['probado_el'] = now()->toIso8601String();
         IntegrationSetting::where('sistema', $system)->update(['ultima_prueba' => $result]);
         app(SecurityService::class)->record('integracion_probada', $actor, ['sistema' => $system, 'conectado' => $result['conectado']]);
+
+        return $result;
+    }
+
+    /**
+     * Checks URL and key without moving money: an empty request must be rejected for its data (400/422),
+     * which proves the key was accepted; 401 means the key is wrong.
+     */
+    private function testCredits(array $config, string $actor): array
+    {
+        $started = microtime(true);
+        try {
+            $response = Http::timeout(30)->connectTimeout(10)->withoutRedirecting()->acceptJson()->withHeaders(['X-Service-Key' => $config['secret']])->post($config['url'], ['prueba' => true]);
+            $status = $response->status();
+            $result = match (true) {
+                in_array($status, [400, 422], true) => ['conectado' => true, 'mensaje' => 'BancaVirtual aceptó la llave. No se acreditó dinero en la prueba.'],
+                $status === 401 || $status === 403 => ['conectado' => false, 'mensaje' => 'BancaVirtual rechazó la llave (HTTP '.$status.'). Revisa la llave de servicio.'],
+                $response->successful() => ['conectado' => true, 'mensaje' => 'BancaVirtual respondió correctamente.'],
+                default => ['conectado' => false, 'mensaje' => 'BancaVirtual respondió con un error HTTP '.$status.'.'],
+            };
+            $result['http_status'] = $status;
+        } catch (\Throwable) {
+            $result = ['conectado' => false, 'http_status' => null, 'mensaje' => 'No se pudo conectar con la URL (sin respuesta o tiempo agotado). El servidor gratuito puede tardar en despertar: vuelve a probar.'];
+        }
+        $result['milisegundos'] = (int) round((microtime(true) - $started) * 1000);
+        $result['probado_el'] = now()->toIso8601String();
+        IntegrationSetting::where('sistema', 'banca_abonos')->update(['ultima_prueba' => $result]);
+        app(SecurityService::class)->record('integracion_probada', $actor, ['sistema' => 'banca_abonos', 'conectado' => $result['conectado']]);
 
         return $result;
     }

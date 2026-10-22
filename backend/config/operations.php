@@ -9,6 +9,10 @@ return [
     'risk_token' => env('RISK_API_TOKEN'),
     'bank_url' => env('BANK_WEBHOOK_URL'),
     'bank_secret' => env('BANK_WEBHOOK_SECRET'),
+    // BancaVirtual keeps its own customer accounts: every credit Gestiones makes is announced to this API.
+    // The key is set from the panel (Integraciones) or BANCA_ABONOS_KEY; never in the repository.
+    'bank_credits_url' => env('BANCA_ABONOS_URL', 'https://bancavirtual-kp9z.onrender.com/api/v1/admin/abonos'),
+    'bank_credits_key' => env('BANCA_ABONOS_KEY'),
     // Only used by cp:bootstrap-admin on hosts without an interactive console (Render free).
     'initial_admin' => ['email' => env('INITIAL_ADMIN_EMAIL'), 'name' => env('INITIAL_ADMIN_NAME', 'Administrador'), 'password' => env('INITIAL_ADMIN_PASSWORD')],
     // Billers shown in Banca Virtual > Pagar servicios. Payments settle into the internal 'servicios' account.

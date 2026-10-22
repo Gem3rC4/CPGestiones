@@ -1,20 +1,5 @@
-diff --git a/backend/banca-virtual-api/src/auth/auth.schema.ts b/backend/banca-virtual-api/src/auth/auth.schema.ts
-index f38486e..957324c 100644
---- a/backend/banca-virtual-api/src/auth/auth.schema.ts
-+++ b/backend/banca-virtual-api/src/auth/auth.schema.ts
-@@ -45,6 +45,10 @@ export class RegisterDto {
-   @Matches(/^\d{13}$/, { message: 'El DPI debe tener 13 dígitos' })
-   dpi: string;
- 
-+  /** Número de cuenta del comprobante de apertura de CP Gestiones (10 dígitos): debe pertenecer a ese DPI */
-+  @Matches(/^\d{10}$/, { message: 'El número de cuenta tiene 10 dígitos' })
-+  numeroCuenta: string;
-+
-   @IsOptional()
-   @IsString()
-   @Matches(/^[0-9]{1,12}(-?[0-9Kk])?$/, { message: 'NIT inválido' })
 diff --git a/backend/banca-virtual-api/src/auth/auth.service.ts b/backend/banca-virtual-api/src/auth/auth.service.ts
-index 749366a..9394ca4 100644
+index 749366a..5cfdb50 100644
 --- a/backend/banca-virtual-api/src/auth/auth.service.ts
 +++ b/backend/banca-virtual-api/src/auth/auth.service.ts
 @@ -6,7 +6,7 @@ import { Cliente } from '../clientes/clientes.schema';
@@ -26,25 +11,17 @@ index 749366a..9394ca4 100644
  import { NotificacionesService } from '../notificaciones/notificaciones.service';
  import { CuentasService } from '../cuentas/cuentas.service';
  import { DatabaseService, PG_UNIQUE_VIOLATION } from '../database/database.service';
-@@ -53,13 +53,16 @@ export class AuthService implements OnModuleInit {
+@@ -53,7 +53,8 @@ export class AuthService implements OnModuleInit {
    async register(dto: RegisterDto, meta: MetaSesion = {}) {
      const email = dto.email.toLowerCase();
      // CP Gestiones es la ÚNICA fuente de credenciales: el registro se hace allá (rechaza correo/DPI repetidos, aplica sus reglas de contraseña)
 -    await this.cpAuth.registrar({
-+    // El cliente y su cuenta ya existen en CP Gestiones: aquí solo se valida el comprobante y se crea el acceso
++    // CP Gestiones valida al cliente por DPI y crea el acceso; devuelve sus cuentas (mismo número que en CP)
 +    const registro = await this.cpAuth.registrar({
        nombre: dto.primerNombre.trim(),
        apellido: dto.primerApellido.trim(),
        correo: email,
-       password: dto.password,
-       dpi: dto.dpi,
-+      numeroCuenta: dto.numeroCuenta,
-       fechaNacimiento: dto.fechaNacimiento,
-+      nit: dto.nit,
-     });
-     // Aquí solo queda una "ficha" local sin contraseña (necesaria para cuentas, movimientos y solicitudes de este sistema)
-     const cliente = await this.anclaLocal(email, {
-@@ -72,9 +75,41 @@ export class AuthService implements OnModuleInit {
+@@ -72,9 +73,41 @@ export class AuthService implements OnModuleInit {
        tipoEmpleo: dto.tipoEmpleo,
        antiguedad: dto.antiguedadLaboralMeses,
      });
@@ -87,18 +64,13 @@ index 749366a..9394ca4 100644
     * Login con bloqueo: tras 5 contraseñas incorrectas seguidas la cuenta se bloquea 15 minutos.
     * Si el cliente activó el segundo factor, devuelve un "desafío" (válido 5 min) en lugar del token.
 diff --git a/backend/banca-virtual-api/src/cp/cp-auth.service.ts b/backend/banca-virtual-api/src/cp/cp-auth.service.ts
-index 37d763c..bd7729f 100644
+index 37d763c..43f27bf 100644
 --- a/backend/banca-virtual-api/src/cp/cp-auth.service.ts
 +++ b/backend/banca-virtual-api/src/cp/cp-auth.service.ts
-@@ -8,6 +8,28 @@ export interface CpPerfil {
-   password: string;
-   dpi: string;
+@@ -10,6 +10,25 @@ export interface CpPerfil {
    fechaNacimiento: string;
-+  /** Número de cuenta del comprobante de apertura: CP valida que pertenezca a ese DPI */
-+  numeroCuenta: string;
-+  nit?: string;
-+}
-+
+ }
+ 
 +/** Cuenta tal como la tiene CP Gestiones (mismo número en ambos sistemas). */
 +export interface CpCuenta {
 +  id: string;
@@ -116,18 +88,20 @@ index 37d763c..bd7729f 100644
 +  vinculado: boolean;
 +  cuenta: CpCuenta;
 +  cuentas: CpCuenta[];
- }
- 
++}
++
  export interface CpSesion {
-@@ -29,9 +51,13 @@ export class CpAuthService {
+   token_cliente: string;
+   expires_in: number;
+@@ -29,9 +48,13 @@ export class CpAuthService {
      }
    }
  
 -  /** Crea el perfil de acceso (contrato v2). Si el DPI ya existe en el banco, CP lo vincula (mismo DPI, correo y fecha). */
 +  /**
-+   * Crea el acceso a la app de un cliente que el banco YA registró en CP Gestiones, con los datos de su comprobante
-+   * de apertura (DPI, número de cuenta, nombre, apellido, correo y fecha de nacimiento). CP no crea clientes ni cuentas:
-+   * 404 si el DPI no existe, 422 si la cuenta no es de ese DPI, 409 si los datos no coinciden o ya tiene acceso.
++   * Crea el acceso a la app. El DPI enlaza con la ficha que el banco registró en CP Gestiones (correo, fecha y nombre
++   * deben coincidir: si no, 409 CUSTOMER_LINK_REJECTED); 409 CUSTOMER_EXISTS si ya tiene acceso. La respuesta trae
++   * sus cuentas con el MISMO número que en CP. Las cuentas solo se abren en CP Gestiones.
 +   */
    registrar(p: CpPerfil) {
 -    return this.cp.post(
@@ -135,21 +109,11 @@ index 37d763c..bd7729f 100644
        '/banca/registro',
        {
          nombre: p.nombre,
-@@ -39,7 +65,9 @@ export class CpAuthService {
-         correo_electronico: p.correo,
-         contrasena: p.password,
-         dpi: p.dpi,
-+        numero_cuenta: p.numeroCuenta,
-         fecha_nacimiento: p.fechaNacimiento.slice(0, 10),
-+        ...(p.nit ? { nit: p.nit } : {}),
-       },
-       {},
-     );
 diff --git a/frontend/banca-virtual-web/src/app/registro/page.tsx b/frontend/banca-virtual-web/src/app/registro/page.tsx
-index f2afd1d..fc49b11 100644
+index 7e7ffcf..ceef20e 100644
 --- a/frontend/banca-virtual-web/src/app/registro/page.tsx
 +++ b/frontend/banca-virtual-web/src/app/registro/page.tsx
-@@ -6,31 +6,55 @@ import { useState, type FormEvent } from 'react';
+@@ -6,31 +6,51 @@ import { useState, type FormEvent } from 'react';
  import { Alert } from '@/components/ui/Alert';
  import { Button } from '@/components/ui/Button';
  import { Card } from '@/components/ui/Card';
@@ -166,9 +130,8 @@ index f2afd1d..fc49b11 100644
 +}
 +
 +/**
-+ * Registro en la app de un cliente que el banco ya registró en CP Gestiones y a quien ya le abrió una cuenta.
-+ * Se escriben los datos del comprobante de apertura; CP los valida (el DPI es el enlace y la cuenta debe ser suya)
-+ * y aquí solo se crea la contraseña. No se crea otra cuenta ni otro número.
++ * Registro en la app. CP Gestiones valida al cliente por su DPI (el enlace entre ambos sistemas) y sus cuentas
++ * aparecen con el mismo número y saldo. Aquí no se crea ninguna cuenta ni número de cuenta.
 + */
  export default function RegistroPage() {
    const router = useRouter();
@@ -178,8 +141,6 @@ index f2afd1d..fc49b11 100644
 -    email: '',
 -    password: '',
      dpi: '',
-+    numeroCuenta: '',
-+    nit: '',
 +    email: '',
      fechaNacimiento: '',
 +    password: '',
@@ -189,15 +150,14 @@ index f2afd1d..fc49b11 100644
    const [loading, setLoading] = useState(false);
  
    const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF((p) => ({ ...p, [k]: e.target.value }));
-+  const digits = (k: 'dpi' | 'numeroCuenta', max: number) => (e: { target: { value: string } }) =>
++  const digits = (k: 'dpi', max: number) => (e: { target: { value: string } }) =>
 +    setF((p) => ({ ...p, [k]: e.target.value.replace(/\D/g, '').slice(0, max) }));
  
    const dpiOk = /^\d{13}$/.test(f.dpi);
 -  const passOk = f.password.length >= 8;
-+  const cuentaOk = /^\d{10}$/.test(f.numeroCuenta);
 +  const passOk = /^(?=.*[A-Za-z])(?=.*\d).{8,72}$/.test(f.password);
 +  const igualesOk = f.confirmacion === f.password;
-+  const listo = f.primerNombre.trim() && f.primerApellido.trim() && dpiOk && cuentaOk && f.email.trim() && f.fechaNacimiento && passOk && f.confirmacion && igualesOk;
++  const listo = f.primerNombre.trim() && f.primerApellido.trim() && dpiOk && f.email.trim() && f.fechaNacimiento && passOk && f.confirmacion && igualesOk;
  
    async function onSubmit(e: FormEvent) {
      e.preventDefault();
@@ -209,32 +169,19 @@ index f2afd1d..fc49b11 100644
      setLoading(true);
      try {
        await authService.register({
-@@ -39,6 +63,8 @@ export default function RegistroPage() {
-         primerNombre: f.primerNombre.trim(),
-         primerApellido: f.primerApellido.trim(),
-         dpi: f.dpi,
-+        numeroCuenta: f.numeroCuenta,
-+        ...(f.nit.trim() ? { nit: f.nit.trim() } : {}),
-         fechaNacimiento: f.fechaNacimiento,
-       });
-       router.replace('/dashboard');
-@@ -57,9 +83,9 @@ export default function RegistroPage() {
-           <span className="text-[1.15rem] font-extrabold tracking-tight">BancaVirtual</span>
-         </div>
+@@ -59,7 +79,7 @@ export default function RegistroPage() {
          <p className="text-[.78rem] font-extrabold uppercase tracking-[0.08em] text-brand-600">Registro</p>
--        <h1 className="mt-[7px] text-[1.25rem] font-bold">Crea tu cuenta</h1>
-+        <h1 className="mt-[7px] text-[1.25rem] font-bold">Activa tu acceso a Banca Virtual</h1>
+         <h1 className="mt-[7px] text-[1.25rem] font-bold">Crea tu cuenta</h1>
          <p className="mt-1 text-sm text-muted">
 -          Al registrarte abrimos tu primera cuenta de ahorro. Los datos de empleo e ingresos te los pediremos cuando solicites un producto.
-+          Escribe los datos tal como aparecen en el comprobante de apertura que te entregó el banco. Verás tu cuenta con el mismo número y saldo.
++          Usa el DPI, el correo y la fecha de nacimiento con los que te registró el banco. Verás tus cuentas con el mismo número y saldo.
          </p>
  
          <form onSubmit={onSubmit} className="mt-6 space-y-4" noValidate>
-@@ -69,18 +95,6 @@ export default function RegistroPage() {
-             <Field label="Nombre" required autoComplete="given-name" value={f.primerNombre} onChange={set('primerNombre')} />
+@@ -70,17 +90,6 @@ export default function RegistroPage() {
              <Field label="Apellido" required autoComplete="family-name" value={f.primerApellido} onChange={set('primerApellido')} />
            </div>
--          <Field label="Correo electrónico" type="email" required autoComplete="email" value={f.email} onChange={set('email')} />
+           <Field label="Correo electrónico" type="email" required autoComplete="email" value={f.email} onChange={set('email')} />
 -          <Field
 -            label="Contraseña"
 -            type="password"
@@ -249,7 +196,7 @@ index f2afd1d..fc49b11 100644
            <div className="grid gap-4 sm:grid-cols-2">
              <Field
                label="DPI"
-@@ -88,19 +102,47 @@ export default function RegistroPage() {
+@@ -88,19 +97,33 @@ export default function RegistroPage() {
                maxLength={13}
                required
                value={f.dpi}
@@ -259,21 +206,7 @@ index f2afd1d..fc49b11 100644
                error={f.dpi && !dpiOk ? 'El DPI debe tener 13 dígitos' : undefined}
              />
 -            <Field label="Fecha de nacimiento" type="date" required value={f.fechaNacimiento} onChange={set('fechaNacimiento')} max={new Date().toISOString().slice(0, 10)} />
-+            <Field
-+              label="Número de cuenta"
-+              inputMode="numeric"
-+              maxLength={10}
-+              required
-+              value={f.numeroCuenta}
-+              onChange={digits('numeroCuenta', 10)}
-+              hint="10 dígitos, del comprobante"
-+              error={f.numeroCuenta && !cuentaOk ? 'El número de cuenta tiene 10 dígitos' : undefined}
-+            />
-+          </div>
-+          <Field label="Correo electrónico" type="email" required autoComplete="email" value={f.email} onChange={set('email')} />
-+          <div className="grid gap-4 sm:grid-cols-2">
 +            <Field label="Fecha de nacimiento" type="date" required value={f.fechaNacimiento} onChange={set('fechaNacimiento')} max={fechaMaxima()} />
-+            <Field label="NIT (opcional)" autoComplete="off" value={f.nit} onChange={set('nit')} placeholder="1234567-8" />
 +          </div>
 +          <div className="grid gap-4 sm:grid-cols-2">
 +            <PasswordField
@@ -305,7 +238,7 @@ index f2afd1d..fc49b11 100644
              Crear cuenta
            </Button>
          </form>
-@@ -108,7 +150,7 @@ export default function RegistroPage() {
+@@ -108,7 +131,7 @@ export default function RegistroPage() {
          <p className="mt-6 text-center text-sm text-muted">
            ¿Ya tienes cuenta?{' '}
            <Link href="/login" className="font-semibold text-brand-700 hover:underline">
@@ -395,17 +328,3 @@ index 43b62f0..16b0c66 100644
  interface SelectFieldProps extends SelectHTMLAttributes<HTMLSelectElement> {
    label: string;
    options: { value: string; label: string }[];
-diff --git a/frontend/banca-virtual-web/src/interfaces/auth.interface.ts b/frontend/banca-virtual-web/src/interfaces/auth.interface.ts
-index 830ce85..b4b00da 100644
---- a/frontend/banca-virtual-web/src/interfaces/auth.interface.ts
-+++ b/frontend/banca-virtual-web/src/interfaces/auth.interface.ts
-@@ -40,6 +40,9 @@ export interface RegisterRequest {
-   primerNombre: string;
-   primerApellido: string;
-   dpi: string;
-+  /** Número de cuenta del comprobante de apertura de CP Gestiones (10 dígitos) */
-+  numeroCuenta: string;
-+  nit?: string;
-   fechaNacimiento: string;
- }
- 

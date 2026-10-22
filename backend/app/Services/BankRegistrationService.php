@@ -17,43 +17,65 @@ class BankRegistrationService
     public function __construct(private CustomerRepository $customers, private AccountService $accounts, private SecurityService $security) {}
 
     /**
-     * Creates the Banca Virtual access of a customer the bank already registered. Customers and accounts are
-     * created only in Gestiones: the person proves who they are with the data printed on their opening
-     * receipt (DPI, account number, names, e-mail and birth date) and only chooses a password here.
-     * No customer, account or account number is ever created by this call.
+     * Creates the Banca Virtual access with the fields of the app's sign-up form (name, last name, e-mail,
+     * password, DPI and birth date). DPI is the link: a customer the bank already registered is linked when the
+     * other data match, and their accounts are sent to Banca Virtual with the same numbers. A DPI the bank does
+     * not know yet gets its access profile only; accounts are always opened in Gestiones.
+     * An account number is optional: when sent, it must belong to that DPI.
      * The controller's IdempotencyService holds the transaction.
      */
     public function register(array $data, string $actor): array
     {
         $customer = $this->customers->byDpi($data['dpi']);
-        if (! $customer) {
-            throw new BusinessException('No encontramos un cliente con ese DPI en CP Gestiones. Primero el banco debe registrarte y abrirte una cuenta.', 'CUSTOMER_NOT_FOUND', 404);
-        }
-        if ($customer->password) {
+        $emailOwner = Customer::where('email', $data['correo_electronico'])->first();
+        $referenceOwner = isset($data['cliente_ref']) ? Customer::where('external_ref', $data['cliente_ref'])->first() : null;
+        if ($customer?->password) {
             throw new BusinessException('Este DPI ya tiene acceso a Banca Virtual. Ingresa con tu correo y contraseña.', 'CUSTOMER_EXISTS', 409);
         }
-        if (! isset($data['numero_cuenta'])) {
-            throw ValidationException::withMessages(['numero_cuenta' => 'Ingresa el número de cuenta de tu comprobante de apertura.']);
+        foreach ([$emailOwner, $referenceOwner] as $owner) {
+            if ($owner && (! $customer || (string) $owner->id !== (string) $customer->id)) {
+                throw new BusinessException('Ya existe un registro con ese correo electrónico. Ingresa con tu correo y contraseña.', 'CUSTOMER_EXISTS', 409);
+            }
         }
-        $account = Account::where('numero', $data['numero_cuenta'])->where('cliente_id', (string) $customer->id)->whereNull('system_key')->first();
-        if (! $account) {
-            throw new BusinessException('El número de cuenta no pertenece al DPI ingresado. Verifícalo en tu comprobante de apertura.', 'ACCOUNT_MISMATCH', 422);
+        if (! $customer) {
+            if (isset($data['numero_cuenta'])) {
+                throw new BusinessException('El número de cuenta no pertenece al DPI ingresado.', 'ACCOUNT_MISMATCH', 422);
+            }
+            $customer = $this->customers->create($this->profileData($data) + [
+                'dpi' => $data['dpi'], 'email' => $data['correo_electronico'],
+                'nombre' => $data['nombre'].' '.$data['apellido'], 'nombres' => $data['nombre'], 'apellidos' => $data['apellido'],
+                'fecha_nacimiento' => $data['fecha_nacimiento'], 'perfil_version' => 1, 'origen' => 'banca_virtual',
+                'password' => Hash::make($data['contrasena']), 'active' => true, 'failed_attempts' => 0, 'acceso_app_desde' => now()->toIso8601String(),
+                // The unique index on external_ref only covers strings; omit the field instead of storing null.
+            ] + (isset($data['cliente_ref']) ? ['external_ref' => $data['cliente_ref']] : []));
+            $this->security->record('cliente_registrado_banca', $actor, ['cliente_id' => (string) $customer->id]);
+            app(AlertService::class)->publish('cliente.registrado:'.$customer->id, 'clientes.read', 'Cliente registrado', 'Una persona creó su acceso en Banca Virtual; aún no tiene cuentas en el banco.', 'clientes', (string) $customer->id);
+            $summary = $this->summary($customer);
+
+            return ['cliente' => $summary['cliente'], 'vinculado' => false, 'cuenta' => null] + $summary;
         }
-        $referenceOwner = isset($data['cliente_ref']) ? Customer::where('external_ref', $data['cliente_ref'])->first() : null;
-        if ($referenceOwner && (string) $referenceOwner->id !== (string) $customer->id) {
-            throw new BusinessException('Ya existe un registro con esos datos. No se vinculó ni se modificó ningún cliente.', 'CUSTOMER_EXISTS', 409);
+        $account = null;
+        if (isset($data['numero_cuenta'])) {
+            $account = Account::where('numero', $data['numero_cuenta'])->where('cliente_id', (string) $customer->id)->whereNull('system_key')->first();
+            if (! $account) {
+                throw new BusinessException('El número de cuenta no pertenece al DPI ingresado.', 'ACCOUNT_MISMATCH', 422);
+            }
         }
         $different = $this->mismatches($customer, $data);
         if ($different !== []) {
-            throw new BusinessException('Los datos no coinciden con los registrados en CP Gestiones ('.implode(', ', $different).'). Escríbelos tal como aparecen en tu comprobante de apertura.', 'CUSTOMER_LINK_REJECTED', 409);
+            throw new BusinessException('Los datos no coinciden con los registrados en el banco para ese DPI ('.implode(', ', $different).'). Escríbelos como los registró el banco o acude a una agencia.', 'CUSTOMER_LINK_REJECTED', 409);
         }
         $customer = $this->link($customer, $data);
-        $this->security->record('perfil_app_vinculado', $actor, ['cliente_id' => (string) $customer->id, 'cuenta' => $account->numero]);
-        app(AlertService::class)->publish('cliente.vinculado:'.$customer->id, 'clientes.read', 'Cliente registrado en Banca Virtual', 'Un cliente del banco activó su acceso a Banca Virtual con su DPI y número de cuenta.', 'clientes', (string) $customer->id);
+        $this->security->record('perfil_app_vinculado', $actor, ['cliente_id' => (string) $customer->id]);
+        app(AlertService::class)->publish('cliente.vinculado:'.$customer->id, 'clientes.read', 'Cliente registrado en Banca Virtual', 'Un cliente del banco activó su acceso a Banca Virtual con su DPI.', 'clientes', (string) $customer->id);
+        // Banca Virtual shows the same accounts, with the same numbers (idempotent there: never a second account).
+        $accounts = Account::where('cliente_id', (string) $customer->id)->whereNull('system_key')->orderBy('created_at')->get();
+        foreach ($accounts as $own) {
+            $this->accounts->syncToBank($own);
+        }
         $summary = $this->summary($customer);
 
-        // 'cuenta' is the account the customer used to register; 'cuentas' lists all of them with their balance.
-        return ['cliente' => $summary['cliente'], 'vinculado' => true, 'cuenta' => $this->accountView($account->toArray())] + $summary;
+        return ['cliente' => $summary['cliente'], 'vinculado' => true, 'cuenta' => $account ? $this->accountView($account->toArray()) : ($summary['cuentas'][0] ?? null)] + $summary;
     }
 
     /**

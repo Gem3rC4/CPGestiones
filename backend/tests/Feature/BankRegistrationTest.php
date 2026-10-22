@@ -145,16 +145,16 @@ final class BankRegistrationTest extends TestCase
         $this->branchCustomer();
         $this->ana();
         $key = fn (): array => $this->headers('reg-'.bin2hex(random_bytes(5)));
-        $this->postJson('/api/v1/banca/registro', $this->payload(['dpi' => '9999999999999']), $key())->assertNotFound()->assertJsonPath('code', 'CUSTOMER_NOT_FOUND');
+        $this->postJson('/api/v1/banca/registro', $this->payload(['dpi' => '9999999999999']), $key())->assertConflict()->assertJsonPath('code', 'CUSTOMER_EXISTS');
         foreach (['3123456789', '0000000000'] as $number) {
             $this->postJson('/api/v1/banca/registro', $this->payload(['numero_cuenta' => $number]), $key())->assertUnprocessable()->assertJsonPath('code', 'ACCOUNT_MISMATCH')
-                ->assertJsonPath('message', 'El número de cuenta no pertenece al DPI ingresado. Verifícalo en tu comprobante de apertura.');
+                ->assertJsonPath('message', 'El número de cuenta no pertenece al DPI ingresado.');
         }
         foreach ([['correo_electronico' => 'otro@ejemplo.com'], ['fecha_nacimiento' => '01/01/1991'], ['nombre' => 'Pedro'], ['apellido' => 'Gómez'], ['nit' => '999999-9']] as $wrong) {
             $this->postJson('/api/v1/banca/registro', $this->payload($wrong), $key())->assertConflict()->assertJsonPath('code', 'CUSTOMER_LINK_REJECTED');
         }
         $this->postJson('/api/v1/banca/registro', $this->payload(['correo_electronico' => 'otro@ejemplo.com', 'nombre' => 'Pedro']), $key())
-            ->assertJsonPath('message', 'Los datos no coinciden con los registrados en CP Gestiones (correo, nombre). Escríbelos tal como aparecen en tu comprobante de apertura.');
+            ->assertJsonPath('message', 'Los datos no coinciden con los registrados en el banco para ese DPI (correo, nombre). Escríbelos como los registró el banco o acude a una agencia.');
         self::assertSame(0, Customer::whereNotNull('password')->count());
         // Accents, case and spacing do not matter.
         $this->postJson('/api/v1/banca/registro', $this->payload(['nombre' => 'JUAN', 'apellido' => 'perez', 'nit' => '12345678']), $key())->assertCreated();
@@ -354,7 +354,7 @@ final class BankRegistrationTest extends TestCase
     public function test_minimal_registration_needs_the_receipt_data_and_a_password(): void
     {
         $this->ana();
-        foreach (['dpi', 'numero_cuenta', 'fecha_nacimiento', 'nombre', 'apellido', 'correo_electronico'] as $field) {
+        foreach (['dpi', 'fecha_nacimiento', 'nombre', 'apellido', 'correo_electronico'] as $field) {
             $this->postJson('/api/v1/banca/registro', $this->minimal([$field => null]), $this->headers('min-'.$field))->assertUnprocessable()->assertJsonValidationErrors($field);
         }
         $this->postJson('/api/v1/banca/registro', $this->minimal(['numero_cuenta' => '312345']), $this->headers('min-short'))->assertUnprocessable()->assertJsonValidationErrors('numero_cuenta');
@@ -423,9 +423,31 @@ final class BankRegistrationTest extends TestCase
         self::assertTrue(Hash::check('clave2026', Customer::first()->password), 'The check never changes the password.');
         $this->postJson('/api/v1/banca/solicitudes', ['dpi' => '3068226670601', 'producto' => 'credito-clasica', 'monto_solicitado' => '10000.00', 'nit' => '12345678', 'tipo_empleo' => 'Asalariado', 'ingresos_mensuales_q' => 9500, 'antiguedad_laboral_meses' => 30, 'gestion_ref' => '100047'], $this->headers('check-02'))
             ->assertCreated()->assertJsonPath('data.gestion_ref', '100047');
-        // Without access yet, the account number is still required.
-        $this->ana(null, ['dpi' => '3068226670602', 'email' => 'otra@ejemplo.com']);
-        $this->postJson('/api/v1/banca/registro', ['dpi' => '3068226670602', 'correo_electronico' => 'otra@ejemplo.com'] + $check, $this->headers('check-03'))->assertUnprocessable()->assertJsonValidationErrors('numero_cuenta');
+    }
+
+    /**
+     * The app's sign-up form has no account number: DPI links the person to the bank's customer file.
+     */
+    public function test_sign_up_without_account_number_links_by_dpi_and_sends_the_accounts_to_banca(): void
+    {
+        $this->patchJson('/api/v1/integraciones/conexiones/banca_abonos', ['url' => 'https://banca.example.test/api/v1/admin/abonos', 'secreto' => 'llave-de-servicio-de-prueba-0001'], $this->headers('config', $this->staff()))->assertOk();
+        $this->ana();
+        $form = ['nombre' => 'Ana', 'apellido' => 'López', 'correo_electronico' => 'ana@ejemplo.com', 'contrasena' => 'clave2026', 'dpi' => '3068226670601', 'fecha_nacimiento' => '12/06/2003'];
+        $this->postJson('/api/v1/banca/registro', ['fecha_nacimiento' => '13/06/2003'] + $form, $this->headers('su-01'))->assertConflict()->assertJsonPath('code', 'CUSTOMER_LINK_REJECTED');
+        $this->postJson('/api/v1/banca/registro', $form, $this->headers('su-02'))->assertCreated()->assertJsonPath('data.vinculado', true)
+            ->assertJsonPath('data.cuenta.numero', '3123456789')->assertJsonPath('data.cuentas.0.saldo', '150.00');
+        self::assertSame(1, Customer::count());
+        self::assertSame(1, Account::whereNull('system_key')->count());
+        $events = OutboxEvent::whereIn('type', ['banca.cuenta', 'banca.abono'])->orderBy('_id')->get();
+        self::assertSame(['banca.cuenta', 'banca.abono'], $events->pluck('type')->all(), 'The account goes to Banca Virtual with the same number, then its opening deposit.');
+        self::assertSame(['3123456789', 'CP-6f1c2d3e-0000-4000-8000-000000000001', 15000], [$events[0]->payload['numero'], $events[1]->payload['referencia'], $events[1]->payload['monto_centavos']]);
+
+        // A DPI the bank does not know yet gets its access profile only; accounts are opened in Gestiones.
+        $new = $this->postJson('/api/v1/banca/registro', ['dpi' => '4000000000001', 'correo_electronico' => 'nuevo@ejemplo.com', 'nombre' => 'Elvis', 'apellido' => 'Morales'] + $form, $this->headers('su-03'))
+            ->assertCreated()->assertJsonPath('data.vinculado', false)->assertJsonPath('data.cuenta', null)->assertJsonPath('data.cuentas', [])->json('data');
+        self::assertSame('banca_virtual', Customer::findOrFail($new['cliente']['id'])->origen);
+        self::assertSame(1, Account::whereNull('system_key')->count());
+        $this->postJson('/api/v1/banca/registro', ['dpi' => '4000000000001', 'correo_electronico' => 'nuevo@ejemplo.com'] + $form, $this->headers('su-04'))->assertConflict()->assertJsonPath('code', 'CUSTOMER_EXISTS');
     }
 
     public function test_gestiones_arrive_from_banca_with_the_detailed_data_and_staff_cannot_create_them(): void

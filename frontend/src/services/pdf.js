@@ -107,7 +107,7 @@ export async function receiptPdf(r) {
   autoTable(doc, { ...tableStyle, startY: y, head: [['Dato', 'Valor']], body: receiptRows(r).map(([k, v]) => [k, String(v)]), columnStyles: { 0: { fontStyle: 'bold', cellWidth: 170 } } })
   let next = doc.lastAutoTable.finalY + 24
   doc.setFontSize(10); doc.setTextColor(...INK)
-  for (const line of ['Para usar Banca Virtual, elige «Registrarse» e ingresa tu DPI, este número de cuenta y los datos de este', 'comprobante; ahí crearás tu contraseña. El número de cuenta no cambia y es el mismo en ambos sistemas.']) { doc.text(line, 40, next); next += 14 }
+  for (const line of ['Para usar Banca Virtual, elige «Registrarse» con tu DPI, tu correo y tu fecha de nacimiento, y crea tu contraseña.', 'Verás esta cuenta con el mismo número y saldo: el número no cambia y es el mismo en ambos sistemas.']) { doc.text(line, 40, next); next += 14 }
   footer(doc)
   return { doc, name: fileName(`comprobante-cuenta-${r.numero_cuenta}`) }
 }

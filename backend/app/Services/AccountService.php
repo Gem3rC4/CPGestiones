@@ -94,6 +94,25 @@ class AccountService
     }
 
     /**
+     * Sends an existing personal account to Banca Virtual (when the customer registers there): the account with
+     * its number and, if it has one, its opening deposit with the same reference as always, so it is never
+     * credited twice. Skipped when it was already sent or is on its way.
+     */
+    public function syncToBank(Account $account): void
+    {
+        if (! $account->cliente_id || $account->system_key) {
+            return;
+        }
+        $sent = fn (string $type, string $field, string $value): bool => OutboxEvent::where('type', $type)->where($field, $value)->whereIn('status', ['pendiente', 'enviando', 'enviado'])->exists();
+        if (! $sent('banca.cuenta', 'aggregate_id', (string) $account->id)) {
+            $this->queueBankAccount($account, Customer::findOrFail($account->cliente_id));
+        }
+        if ($account->apertura_transaccion_id && ! $sent('banca.abono', 'payload.referencia', 'CP-'.$account->apertura_transaccion_id)) {
+            $this->queueBankCredit($account, $account->apertura_transaccion_id, (int) $account->monto_apertura_centavos, 'Depósito de apertura de cuenta '.$account->numero, 'apertura_cuenta');
+        }
+    }
+
+    /**
      * POST /admin/cuentas of Banca Virtual: it registers the account with the number assigned here, linked
      * to the customer's DPI. Written in the same transaction as the account (outbox), so it is never lost.
      */

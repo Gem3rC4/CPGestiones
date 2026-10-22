@@ -90,15 +90,13 @@ class BankRegistrationRequest extends BankCustomerRequest
         return array_map(fn (array $rules): array => array_map(fn ($rule) => $rule === 'required' ? 'sometimes' : $rule, $rules), $this->financialRules());
     }
 
-    // Data of the opening receipt (DPI, account number, names, e-mail, birth date) plus the new password.
+    // Sign-up form of the app: names, e-mail, password, DPI and birth date (account number optional).
     // NIT and the financial fields stay optional so the original, longer form keeps working.
     public function rules(): array
     {
         return [
             'dpi' => ['required', 'string', 'regex:/^[0-9]{13}$/D'],
-            // The account number printed on the opening receipt: it must belong to that DPI. Checked in the service
-            // after "already has access", because Banca Virtual calls this endpoint before each gestión to confirm
-            // the customer exists and expects CUSTOMER_EXISTS.
+            // Optional: when sent, the account must belong to that DPI. The sign-up form does not ask for it.
             'numero_cuenta' => ['sometimes', 'string', 'regex:/^[0-9]{10}$/D'],
             'cliente_ref' => ['sometimes', 'string', 'max:100', 'regex:/^[A-Za-z0-9][A-Za-z0-9_.:@-]*$/D'],
             'contrasena' => self::passwordRules(),
@@ -112,7 +110,7 @@ class BankRegistrationRequest extends BankCustomerRequest
 
     public function messages(): array
     {
-        return parent::messages() + self::passwordMessages('contrasena') + ['numero_cuenta.required' => 'Ingresa el número de cuenta de tu comprobante de apertura.', 'numero_cuenta.regex' => 'El número de cuenta tiene 10 dígitos.'];
+        return parent::messages() + self::passwordMessages('contrasena') + ['numero_cuenta.regex' => 'El número de cuenta tiene 10 dígitos.'];
     }
 
     public function after(): array

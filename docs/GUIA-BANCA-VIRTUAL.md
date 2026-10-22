@@ -86,7 +86,7 @@ Gestiones es la única fuente de saldos: un depósito en ventanilla, una planill
 
 | Pantalla de Banca Virtual | API |
 | --- | --- |
-| Activa tu acceso con el comprobante (registro) | `POST /banca/registro` |
+| Crea tu acceso (registro) | `POST /banca/registro` |
 | Ingresa / Salir | `POST /banca/auth/login`, `GET /banca/auth/sesion`, `POST /banca/auth/logout` |
 | ¿Olvidaste tu contraseña? | `POST /banca/auth/recuperar` |
 | Inicio (saldo total y "Mis cuentas") | `GET /banca/resumen` |
@@ -114,7 +114,7 @@ Gestiones es la única fuente de saldos: un depósito en ventanilla, una planill
 
 ### 4.1 Registro — `POST /banca/registro`
 
-Activa el acceso a la app de un cliente que **el banco ya registró en CP Gestiones y al que ya le abrió una cuenta**. La persona escribe los datos de su **comprobante de apertura** y crea su contraseña. Este endpoint **no crea clientes, ni cuentas, ni números de cuenta**.
+Crea el acceso a la app con los campos del formulario de registro. **No pide número de cuenta** y nunca crea cuentas: las cuentas se abren en Gestiones. El DPI es el enlace entre los dos sistemas.
 
 ```http
 POST /api/v1/banca/registro
@@ -128,28 +128,23 @@ Idempotency-Key: registro-6f1c2a1e-uuid
   "correo_electronico": "ferfajardo@creditpulse.com",
   "contrasena": "MiClave2026",
   "dpi": "3068226670601",
-  "numero_cuenta": "2123456789",
   "fecha_nacimiento": "12/06/2003"
 }
 ```
 
-- `dpi`: 13 dígitos. Es el enlace entre ambos sistemas: debe existir en Gestiones.
-- `numero_cuenta`: 10 dígitos (se aceptan guiones). Debe ser una cuenta de ese DPI.
-- `nombre`, `apellido`, `correo_electronico` y `fecha_nacimiento` deben coincidir con la ficha del cliente (sin importar mayúsculas, acentos ni espacios; basta el primer nombre). `nit` es opcional y, si se envía, también se compara.
+- `dpi`: 13 dígitos.
+- `fecha_nacimiento`: `dd/mm/aaaa` o `aaaa-mm-dd`; mayor de 18 años.
 - `contrasena`: 8 a 72 caracteres, con al menos una letra y un número.
+- Opcionales: `numero_cuenta` (si se envía, debe ser de ese DPI), `nit`, `tipo_empleo`, `ingresos_mensuales_q`, `antiguedad_laboral_meses`, `cliente_ref`. Cualquier otro campo se rechaza (422).
 
-Errores (mensaje listo para mostrar):
+Qué hace según el DPI:
 
-| Código | Cuándo |
-| --- | --- |
-| `404 CUSTOMER_NOT_FOUND` | No hay cliente con ese DPI (el banco debe registrarlo primero). |
-| `422 ACCOUNT_MISMATCH` | El número de cuenta no pertenece a ese DPI. |
-| `409 CUSTOMER_LINK_REJECTED` | Algún dato no coincide; el mensaje dice cuáles (correo, nombre…), nunca los valores. |
-| `409 CUSTOMER_EXISTS` | Ese DPI ya tiene acceso: debe ingresar con su correo y contraseña. |
+- **El banco ya registró ese DPI:** correo, fecha de nacimiento y nombre (sin importar mayúsculas, acentos ni espacios; basta el primer nombre) deben coincidir con la ficha. Se activa el acceso, responde `"vinculado": true` con sus cuentas y Gestiones las vuelve a enviar a Banca (`POST /admin/cuentas`, mismo número, y el abono de apertura con su referencia de siempre: Banca no duplica nada).
+- **DPI nuevo:** se crea solo el acceso (`"vinculado": false`, sin cuentas). Cuando el banco le abra una cuenta en Gestiones, llegará sola a Banca.
 
-Respuesta **201**: `data.cliente`, `data.vinculado: true`, `data.cuenta` (la cuenta del comprobante) y `data.cuentas` con **todas** sus cuentas tal como están en Gestiones (`numero`, `tipo`, `saldo`, `saldo_centavos`, `monto_apertura_centavos`, `apertura_referencia`).
+Errores: `409 CUSTOMER_EXISTS` (ese DPI o correo ya tiene acceso), `409 CUSTOMER_LINK_REJECTED` (algún dato no coincide; el mensaje dice cuáles, nunca los valores), `422 ACCOUNT_MISMATCH` (se envió un `numero_cuenta` que no es de ese DPI).
 
-**Las cuentas en BancaVirtual.** Gestiones registra cada cuenta en BancaVirtual al abrirla (`POST /admin/cuentas` con el **mismo número**) y acredita el depósito de apertura (`POST /admin/abonos`, origen `CP-GESTIONES-APERTURAS`, referencia `CP-<transacción>`). Si al registrarse la cuenta todavía no llegó, BancaVirtual la crea con ese número y acredita la apertura con esa misma `apertura_referencia`; cuando Gestiones envíe el abono, BancaVirtual responde `duplicado` y el saldo no se suma dos veces.
+Respuesta **201**: `data.cliente`, `data.vinculado`, `data.cuenta` (la primera cuenta o `null`) y `data.cuentas` tal como están en Gestiones (`numero`, `tipo`, `saldo`, `saldo_centavos`, `monto_apertura_centavos`, `apertura_referencia`).
 
 ### 4.2 Iniciar sesión — `POST /banca/auth/login`
 
@@ -470,7 +465,7 @@ const gestion = await gestiones('POST', '/banca/solicitudes', {
 ## 6. Para empezar a probar
 
 1. Pide el token al administrador de CP Gestiones y guárdalo en tu servidor como `CP_GESTIONES_TOKEN`.
-2. Prueba `GET /health`; registra un cliente y ábrele una cuenta en el panel de Gestiones y luego activa su acceso con `POST /banca/registro` usando el comprobante.
+2. Prueba `GET /health`; registra un cliente y ábrele una cuenta en el panel de Gestiones y luego crea su acceso con `POST /banca/registro` usando su DPI.
 3. Inicia sesión (`POST /banca/auth/login`), abre una cuenta (`POST /banca/cuentas`) y muestra `GET /banca/resumen` en Inicio.
 4. Para tener saldo de prueba, el cajero o el administrador hace un depósito desde el panel de Gestiones (**Cuentas → Depósito o retiro**) a la cuenta del cliente.
 5. Prueba una transferencia entre dos clientes de prueba por número de cuenta y una gestión (`POST /banca/solicitudes`): debe aparecer en el buzón **Gestiones** del panel.

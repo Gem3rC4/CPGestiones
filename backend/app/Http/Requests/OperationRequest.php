@@ -30,7 +30,6 @@ class OperationRequest extends FormRequest
                 'nit' => ['required', 'string', 'max:20', 'regex:/^[0-9]{1,12}-?[0-9Kk]$/D'], 'telefono' => ['required', 'string', 'regex:/^[0-9+][0-9 -]{7,19}$/D'],
                 'fecha_nacimiento' => 'required|date_format:Y-m-d|after_or_equal:1900-01-01|before_or_equal:'.now('America/Guatemala')->subYears(18)->toDateString(), 'ingreso_mensual' => $money,
                 'antiguedad_laboral_meses' => 'required|integer|min:0|max:1500'],
-            'productos.update' => ['name' => 'required|string|max:120', 'active' => 'required|boolean', 'annual_bps' => 'required|integer|min:0|max:6000', 'minimum_bps' => 'required|integer|min:0|max:10000', 'minimum_floor_cents' => 'required|integer|min:0|max:1000000', 'cutoff_day' => 'required|integer|min:1|max:31', 'payment_days' => 'required|integer|min:1|max:30'],
             // The opening amount (minimum Q100.00) becomes the first balance of the account.
             'cuentas.store' => ['cliente_id' => $id, 'producto' => 'required|in:ahorro,monetaria', 'monto_apertura' => $money] + $scope,
             'cuentas.state' => ['estado' => 'required|in:activa,bloqueada', 'nota' => 'required|string|min:5|max:500'],
@@ -54,6 +53,9 @@ class OperationRequest extends FormRequest
             // Purchase authorization: the merchant is required for the central log.
             'tarjetas.autorizar' => ['monto' => $money, 'comercio' => 'required|string|min:2|max:120', 'concepto' => 'sometimes|nullable|string|max:120', 'referencia' => 'sometimes|nullable|string|max:80'] + $scope,
             'clientes.eliminar' => ['nota' => 'sometimes|nullable|string|max:500'],
+            'empresas.eliminar' => ['nota' => 'sometimes|nullable|string|max:500'],
+            'concentradora.ingreso' => ['monto' => $money, 'concepto' => 'required|string|min:3|max:160'],
+            'mantenimiento.limpieza' => ['confirmacion' => 'required|string|in:ELIMINAR TODO'],
             'empresas.usuarios' => ['nombre' => 'required|string|max:150', 'correo' => 'required|email|max:180', 'contrasena' => 'required|string|min:12|max:72|regex:/[A-Z]/|regex:/[a-z]/|regex:/[0-9]/'],
             'planillas.store' => ['empresa_id' => $id, 'nombre' => 'required|string|max:120', 'pagos' => 'required|array|min:1|max:500', 'pagos.*.cuenta_id' => 'sometimes|string|regex:/^[a-f0-9]{24}$/D', 'pagos.*.cuenta_numero' => 'required_without_all:pagos.*.cuenta_id,pagos.*.colaborador_id|string|max:30', 'pagos.*.nombre' => 'required|string|max:150', 'pagos.*.monto' => $money, 'pagos.*.puesto' => 'sometimes|string|max:80', 'pagos.*.colaborador_id' => 'sometimes|string|regex:/^[a-f0-9]{24}$/D'],
             'colaboradores.store' => ['empresa_id' => $id, 'cliente_id' => 'sometimes|string|regex:/^[a-f0-9]{24}$/D', 'puesto' => 'required|string|max:80', 'salario' => $money, 'cuenta_id' => 'required_without:cuenta_numero|string|regex:/^[a-f0-9]{24}$/D', 'cuenta_numero' => 'required_without:cuenta_id|string|regex:/^[0-9]{10}$/D'],

@@ -101,6 +101,25 @@ class AccountService
         return $movement;
     }
 
+    /**
+     * The administrator adds funds to the master account: the amount is added to the current balance (never
+     * replaces it), comes from the bank's capital and is recorded with its concept and who did it.
+     */
+    public function fundVault(int $cents, string $actor, string $concept): array
+    {
+        if ($cents < 1) {
+            throw ValidationException::withMessages(['monto' => 'El monto debe ser mayor que cero.']);
+        }
+        $capital = Account::firstOrCreate(['system_key' => 'capital'], ['numero' => 'INTERNA-capital', 'nombre' => 'Capital del banco', 'tipo' => 'interna', 'moneda' => 'GTQ', 'saldo_centavos' => 0, 'estado' => 'activa']);
+        $master = $this->master();
+        $before = (int) $master->saldo_centavos;
+        $movement = $this->move((string) $capital->id, (string) $master->id, $cents, $actor, $concept, 'ingreso_concentradora');
+        $after = (int) $master->refresh()->saldo_centavos;
+
+        return ['transaccion_id' => $movement['transaccion_id'], 'monto_centavos' => $cents, 'concepto' => $concept, 'saldo_anterior_centavos' => $before, 'saldo_centavos' => $after,
+            'saldo' => Money::format($after), 'responsable' => $actor, 'fecha' => now()->toIso8601String()];
+    }
+
     public function cashOutAccount(): Account
     {
         return $this->outside();

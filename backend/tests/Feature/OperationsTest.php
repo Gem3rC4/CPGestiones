@@ -19,6 +19,7 @@ use App\Models\IntegrationSetting;
 use App\Models\Movement;
 use App\Models\OutboxEvent;
 use App\Models\Payroll;
+use App\Models\Product;
 use App\Models\SecurityEvent;
 use App\Models\Statement;
 use App\Models\User;
@@ -30,6 +31,7 @@ use App\Services\CardService;
 use App\Services\CollectionService;
 use App\Services\IdempotencyService;
 use App\Services\InstallService;
+use App\Services\MaintenanceService;
 use App\Services\OutboxService;
 use App\Services\SavingsService;
 use App\Support\Money;
@@ -1069,6 +1071,7 @@ final class OperationsTest extends TestCase
         app(InstallService::class)->fundMasterAccount();
         $vault = fn (): int => (int) Account::where('system_key', 'concentradora')->firstOrFail()->saldo_centavos;
         $rich = $this->customer('rich');
+        $rich->update(['dpi' => '1112223334445']);
         $account = $this->account($rich, 0);
         $this->postJson('/api/v1/caja', ['cuenta_id' => (string) $account->id, 'tipo' => 'deposito', 'monto' => '300.00', 'concepto' => 'Depósito'], $this->headers())->assertCreated();
         Card::create(['cliente_id' => (string) $rich->id, 'solicitud_id' => 'del', 'referencia' => 'CPDEL', 'tipo' => 'credito', 'estado' => 'activa', 'limite_centavos' => 100000, 'principal_centavos' => 4000, 'interes_centavos' => 100, 'emitida_el' => '2026-10-01', 'policy' => ['cutoff_day' => 5, 'payment_day' => 25, 'annual_bps' => 0]]);
@@ -1084,8 +1087,13 @@ final class OperationsTest extends TestCase
         self::assertSame(0, Account::where('cliente_id', (string) $rich->id)->count() + Card::where('cliente_id', (string) $rich->id)->count() + Credit::where('cliente_id', (string) $rich->id)->count() + CardApplication::where('cliente_id', (string) $rich->id)->count());
         self::assertSame($before + 30000, $vault(), 'The remaining balance goes back to the vault.');
         self::assertSame(0, (int) Account::sum('saldo_centavos'));
-        self::assertSame($account->numero, Movement::where('cuenta_id', (string) $account->id)->firstOrFail()->cuenta_numero, 'The ledger keeps the account number.');
-        self::assertSame(1, SecurityEvent::where('action', 'cliente_eliminado')->count());
+        self::assertSame(0, Movement::where('cuenta_id', (string) $account->id)->count(), 'The customer movements are deleted too.');
+        self::assertSame(0, SecurityEvent::where('detail.cliente_id', (string) $rich->id)->count());
+        self::assertArrayNotHasKey('nombre', SecurityEvent::where('action', 'cliente_eliminado')->firstOrFail()->detail);
+        // The same person can be registered again with the same DPI and e-mail.
+        $again = ['nombres' => 'Cliente', 'apellidos' => 'Rich', 'email' => 'rich@example.test', 'dpi' => $rich->dpi, 'nit' => '1234567-8', 'telefono' => '5555-1111', 'fecha_nacimiento' => '1990-01-01', 'ingreso_mensual' => '1000.00', 'antiguedad_laboral_meses' => 12];
+        $this->postJson('/api/v1/clientes', $again, $this->headers())->assertCreated();
+        $this->postJson('/api/v1/clientes', $again, $this->headers())->assertConflict();
 
         $empty = $this->customer('empty');
         $this->getJson('/api/v1/clientes/'.$empty->id.'/eliminacion', $this->headers())->assertOk()->assertJsonPath('data.tiene_saldo_o_deuda', false);
@@ -1138,5 +1146,117 @@ final class OperationsTest extends TestCase
         $this->getJson('/api/v1/tarjetas?dpi=6543265432654', $this->headers($bank))->assertOk()->assertJsonPath('data.data.0.ciclo.fecha_limite_pago', '2026-10-25');
         $this->getJson('/api/v1/banca/tarjetas/ciclos', $this->headers($bank))->assertUnprocessable();
         $this->travelBack();
+    }
+
+    public function test_company_is_deleted_with_its_accounts_payrolls_and_users_but_not_its_employees(): void
+    {
+        app(InstallService::class)->fundMasterAccount();
+        $company = $this->postJson('/api/v1/empresas', ['nombre' => 'Borrar S.A.', 'nit' => '5566778-9', 'monto_apertura' => '500.00', 'representante_nombre' => 'Rep', 'representante_correo' => 'rep@borrar.test', 'contrasena' => 'EmpresaSegura2026'], $this->headers())->assertCreated()->json('data');
+        $employee = $this->customer('empleado');
+        $employeeAccount = $this->account($employee, 0);
+        $companyAccount = Account::where('empresa_id', $company['id'])->firstOrFail();
+        $payroll = $this->postJson('/api/v1/planillas', ['empresa_id' => $company['id'], 'nombre' => 'Única', 'pagos' => [['nombre' => 'Empleado', 'cuenta_numero' => $employeeAccount->numero, 'monto' => '100.00']]], $this->headers())->json('data.id');
+        $this->postJson('/api/v1/planillas/'.$payroll.'/autorizar', [], $this->headers())->assertOk();
+        $vault = fn (): int => (int) Account::where('system_key', 'concentradora')->firstOrFail()->saldo_centavos;
+        $before = $vault();
+        $this->getJson('/api/v1/empresas/'.$company['id'].'/eliminacion', $this->headers())->assertOk()->assertJsonPath('data.saldo_centavos', 40000)->assertJsonPath('data.usuarios', 1);
+        $this->postJson('/api/v1/empresas/'.$company['id'].'/eliminar', [], $this->headers())->assertOk()->assertJsonPath('data.eliminada', true);
+        self::assertNull(Company::find($company['id']));
+        self::assertSame(0, Account::where('empresa_id', $company['id'])->count() + Payroll::where('empresa_id', $company['id'])->count() + User::where('empresa_id', $company['id'])->count());
+        self::assertSame(0, Movement::where('cuenta_id', (string) $companyAccount->id)->count());
+        self::assertSame($before + 40000, $vault(), 'The company balance goes back to the vault.');
+        self::assertSame(10000, $employeeAccount->refresh()->saldo_centavos, 'The employee keeps their money and history.');
+        self::assertSame(0, (int) Account::sum('saldo_centavos'));
+        $this->getJson('/api/v1/empresas', $this->headers())->assertOk()->assertJsonCount(0, 'data.data');
+        $this->postJson('/api/v1/empresas', ['nombre' => 'Borrar S.A.', 'nit' => '5566778-9', 'representante_nombre' => 'Rep', 'representante_correo' => 'rep@borrar.test', 'contrasena' => 'EmpresaSegura2026'], $this->headers())->assertCreated();
+    }
+
+    public function test_administrator_adds_funds_to_the_vault_once_per_request(): void
+    {
+        app(InstallService::class)->fundMasterAccount();
+        $start = $this->getJson('/api/v1/concentradora', $this->headers())->assertOk()->json('data.saldo_centavos');
+        $this->postJson('/api/v1/concentradora/ingresos', ['monto' => '0.00', 'concepto' => 'Cero'], $this->headers())->assertUnprocessable();
+        $this->postJson('/api/v1/concentradora/ingresos', ['monto' => '-5.00', 'concepto' => 'Negativo'], $this->headers())->assertUnprocessable();
+        $body = ['monto' => '250000.50', 'concepto' => 'Aporte de capital octubre'];
+        $done = $this->postJson('/api/v1/concentradora/ingresos', $body, $this->headers(null, 'vault-deposit-1'))->assertCreated()->json('data');
+        self::assertSame([$start, $start + 25000050, 'Aporte de capital octubre', 'admin'], [$done['saldo_anterior_centavos'], $done['saldo_centavos'], $done['concepto'], $done['responsable_nombre']]);
+        $this->postJson('/api/v1/concentradora/ingresos', $body, $this->headers(null, 'vault-deposit-1'))->assertCreated();
+        $this->postJson('/api/v1/concentradora/ingresos', $body, $this->headers(null, 'vault-deposit-1'))->assertCreated();
+        self::assertSame($start + 25000050, $this->getJson('/api/v1/concentradora', $this->headers())->json('data.saldo_centavos'), 'Repeated clicks with the same key add it once.');
+        $movement = Movement::where('tipo', 'ingreso_concentradora')->where('importe_centavos', 25000050)->firstOrFail();
+        self::assertSame(['Aporte de capital octubre', (string) $this->admin->id], [$movement->concepto, $movement->actor]);
+        self::assertSame(1, Movement::where('tipo', 'ingreso_concentradora')->where('importe_centavos', 25000050)->count());
+        $this->postJson('/api/v1/concentradora/ingresos', $body, $this->headers($this->token($this->user('operador', 'ops-vault'))))->assertForbidden();
+    }
+
+    public function test_full_reset_leaves_products_staff_and_integrations_and_allows_registering_again(): void
+    {
+        app(InstallService::class)->fundMasterAccount();
+        $this->patchJson('/api/v1/integraciones/conexiones/banca_abonos', ['url' => 'https://banca.example.test/api/v1/admin/abonos', 'secreto' => 'llave-de-servicio-de-prueba-0001'], $this->headers())->assertOk();
+        $client = ['nombres' => 'Reset', 'apellidos' => 'Prueba', 'email' => 'reset@example.test', 'dpi' => '7897897897897', 'nit' => '789789-7', 'telefono' => '5555-7777', 'fecha_nacimiento' => '1990-01-01', 'ingreso_mensual' => '3000.00', 'antiguedad_laboral_meses' => 6];
+        $created = $this->postJson('/api/v1/clientes', $client, $this->headers())->assertCreated()->json('data');
+        $this->postJson('/api/v1/cuentas', ['cliente_id' => $created['id'], 'producto' => 'ahorro', 'monto_apertura' => '500.00'], $this->headers())->assertCreated();
+        $this->postJson('/api/v1/empresas', ['nombre' => 'Reset S.A.', 'nit' => '1112223-4', 'representante_nombre' => 'Rep', 'representante_correo' => 'rep@reset.test', 'contrasena' => 'EmpresaSegura2026'], $this->headers())->assertCreated();
+        $products = Product::count();
+        $staff = User::where('role', '!=', 'empresa')->count();
+
+        $this->postJson('/api/v1/mantenimiento/limpieza-total', ['confirmacion' => 'borrar'], $this->headers())->assertUnprocessable();
+        $this->postJson('/api/v1/mantenimiento/limpieza-total', ['confirmacion' => 'ELIMINAR TODO'], $this->headers($this->token($this->user('administrador', 'second-admin'))))->assertForbidden();
+        $this->admin->refresh()->update(['protegido' => true]);
+        $reset = $this->postJson('/api/v1/mantenimiento/limpieza-total', ['confirmacion' => 'ELIMINAR TODO'], $this->headers());
+        $reset->assertOk()->assertJsonPath('data.eliminados.clientes', 1);
+        self::assertSame([0, 0, 0, 0, 0], [Customer::count(), Company::count(), Account::whereNull('system_key')->count(), Payroll::count(), User::where('role', 'empresa')->count()]);
+        self::assertSame([$products, $staff + 1], [Product::count(), User::where('role', '!=', 'empresa')->count()]);
+        self::assertSame((int) config('operations.master_account_opening_cents'), (int) Account::where('system_key', 'concentradora')->firstOrFail()->saldo_centavos, 'The vault opens again with the initial funds.');
+        self::assertSame(0, (int) Account::where('system_key', 'efectivo')->firstOrFail()->saldo_centavos);
+        self::assertSame(0, (int) Account::sum('saldo_centavos'));
+        self::assertSame(1, OutboxEvent::where('type', 'banca.cliente_eliminado')->count(), 'Banca Virtual is asked to delete its copy.');
+        self::assertNotNull(IntegrationSetting::first());
+        $again = $this->postJson('/api/v1/clientes', $client, $this->headers())->assertCreated()->json('data');
+        $this->postJson('/api/v1/cuentas', ['cliente_id' => $again['id'], 'producto' => 'ahorro', 'monto_apertura' => '100.00'], $this->headers())->assertCreated();
+    }
+
+    public function test_leftovers_of_deleted_customers_are_purged_without_touching_others(): void
+    {
+        $kept = $this->customer('kept');
+        $keptAccount = $this->account($kept, 500);
+        Movement::create(['cuenta_id' => (string) $keptAccount->id, 'importe_centavos' => 500, 'tipo' => 'deposito']);
+        $gone = Account::create(['cliente_id' => '0123456789abcdef01234567', 'numero' => 'CPORPHAN', 'tipo' => 'ahorro', 'estado' => 'activa', 'moneda' => 'GTQ', 'saldo_centavos' => 0]);
+        Movement::create(['cuenta_id' => (string) $gone->id, 'importe_centavos' => 100, 'tipo' => 'deposito']);
+        Movement::create(['cuenta_id' => 'abcdefabcdefabcdefabcdef', 'importe_centavos' => 100, 'tipo' => 'deposito', 'titular_eliminado' => 'Antiguo']);
+        Card::create(['cliente_id' => '0123456789abcdef01234567', 'referencia' => 'CPOLD', 'tipo' => 'credito', 'estado' => 'activa']);
+        $result = app(MaintenanceService::class)->purgeOrphans();
+        self::assertSame([1, 1], [$result['cuentas'], $result['tarjetas']]);
+        self::assertNull(Account::find($gone->id));
+        self::assertSame(1, Movement::count(), 'Only the movement of the existing customer remains.');
+        self::assertNotNull(Account::find($keptAccount->id));
+        self::assertSame(0, app(MaintenanceService::class)->purgeOrphans()['cuentas']);
+    }
+
+    public function test_products_and_policies_are_read_only(): void
+    {
+        $product = Product::where('code', 'credito-oro')->firstOrFail();
+        $this->patchJson('/api/v1/productos/'.$product->id, ['name' => 'Otro', 'active' => true, 'annual_bps' => 1, 'minimum_bps' => 1, 'minimum_floor_cents' => 1, 'cutoff_day' => 1, 'payment_days' => 1], $this->headers())->assertNotFound();
+        $this->getJson('/api/v1/productos', $this->headers())->assertOk()->assertJsonPath('data.total', Product::count());
+        self::assertSame('Tarjeta de crédito Oro', $product->refresh()->name);
+    }
+
+    public function test_banca_virtual_is_asked_to_delete_its_copy_and_the_dpi_is_not_kept(): void
+    {
+        $this->patchJson('/api/v1/integraciones/conexiones/banca_abonos', ['url' => 'https://banca.example.test/api/v1/admin/abonos', 'secreto' => 'llave-de-servicio-de-prueba-0001'], $this->headers())->assertOk();
+        $customer = $this->customer('banca-delete');
+        $customer->update(['dpi' => '9998887776665', 'email' => 'Borrar@Example.test']);
+        $this->postJson('/api/v1/clientes/'.$customer->id.'/eliminar', [], $this->headers())->assertOk();
+        $calls = [];
+        Http::fake(function ($request) use (&$calls) {
+            $calls[] = $request;
+
+            return Http::response(['ok' => true, 'eliminado' => true]);
+        });
+        app(OutboxService::class)->deliver();
+        self::assertSame('https://banca.example.test/api/v1/admin/clientes/eliminar', $calls[0]->url());
+        self::assertSame(['9998887776665', 'borrar@example.test', 'llave-de-servicio-de-prueba-0001'], [$calls[0]['dpi'], $calls[0]['correo'], $calls[0]->header('X-Service-Key')[0]]);
+        $event = OutboxEvent::where('type', 'banca.cliente_eliminado')->firstOrFail();
+        self::assertSame(['enviado', []], [$event->status, (array) $event->payload]);
     }
 }

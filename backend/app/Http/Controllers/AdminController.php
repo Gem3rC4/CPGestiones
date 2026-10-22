@@ -6,12 +6,13 @@ use App\Exceptions\BusinessException;
 use App\Http\Requests\OperationRequest;
 use App\Models\Company;
 use App\Models\Customer;
-use App\Models\Product;
 use App\Models\User;
 use App\Repositories\CustomerRepository;
+use App\Services\AccountService;
 use App\Services\AuthService;
 use App\Services\BankRegistrationService;
 use App\Services\CustomerDeletionService;
+use App\Services\MaintenanceService;
 use App\Services\SecurityService;
 use App\Support\Money;
 use Illuminate\Support\Facades\Hash;
@@ -115,18 +116,51 @@ class AdminController extends ApiController
 
     public function deleteCustomer(OperationRequest $r, string $id, CustomerDeletionService $service)
     {
-        return $this->mutation($r, fn ($d, $a): array => $service->delete(Customer::where('segmento', '!=', 'empresa')->findOrFail($id), $a, $d['nota'] ?? null));
+        return $this->mutation($r, fn ($d, $a): array => $service->delete(Customer::where('segmento', '!=', 'empresa')->findOrFail($id), $a));
     }
 
-    public function product(OperationRequest $r, string $id)
+    public function companyDeletionSummary(string $id, CustomerDeletionService $service)
     {
-        return $this->mutation($r, function ($d, $a) use ($id) {
-            $p = Product::findOrFail($id);
-            $p->update($d);
-            app(SecurityService::class)->record('politica_producto', $a, ['producto' => $p->code, 'policy' => $d]);
+        return $this->ok($service->companySummary(Company::findOrFail($id)));
+    }
 
-            return $p->toArray();
-        });
+    public function deleteCompany(OperationRequest $r, string $id, CustomerDeletionService $service)
+    {
+        return $this->mutation($r, fn ($d, $a): array => $service->deleteCompany(Company::findOrFail($id), $a));
+    }
+
+    /**
+     * Current balance of the master account, for the "add funds" form.
+     */
+    public function vault(AccountService $accounts)
+    {
+        $master = $accounts->master();
+
+        return $this->ok(['numero' => $master->numero, 'nombre' => $master->nombre, 'saldo_centavos' => (int) $master->saldo_centavos, 'saldo' => Money::format((int) $master->saldo_centavos)]);
+    }
+
+    /**
+     * Idempotency-Key makes each deposit apply once, however many times the button is clicked or retried.
+     */
+    public function fundVault(OperationRequest $r, AccountService $accounts)
+    {
+        return $this->mutation($r, function ($d, $a) use ($r, $accounts): array {
+            $name = $r->user()?->name;
+
+            return $accounts->fundVault(Money::cents($d['monto']), $a, $d['concepto']) + ['responsable_nombre' => $name];
+        }, 201);
+    }
+
+    public function resetAll(OperationRequest $r, MaintenanceService $maintenance)
+    {
+        if (! $r->user()?->protegido) {
+            throw new BusinessException('Solo el administrador principal puede reiniciar los datos.', 'ADMIN_PROTECTED', 403);
+        }
+
+        $r->validated();
+
+        // Runs its own transaction; the confirmation phrase guards it instead of an Idempotency-Key.
+        return $this->ok(['limpieza' => 'completada', 'eliminados' => $maintenance->resetAll($r->attributes->get('actor'))]);
     }
 
     /**

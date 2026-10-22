@@ -1,0 +1,128 @@
+diff --git a/backend/banca-virtual-api/src/admin/admin.controller.ts b/backend/banca-virtual-api/src/admin/admin.controller.ts
+index 5e21ae0..8dd09fd 100644
+--- a/backend/banca-virtual-api/src/admin/admin.controller.ts
++++ b/backend/banca-virtual-api/src/admin/admin.controller.ts
+@@ -1,5 +1,5 @@
+ import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+-import { IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
++import { IsEmail, IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength } from 'class-validator';
+ import { NotificacionesService } from '../notificaciones/notificaciones.service';
+ import { ApiTags } from '@nestjs/swagger';
+ import { Auth } from '../auth/jwt-auth.guard';
+@@ -10,6 +10,17 @@ import { CuentasService } from '../cuentas/cuentas.service';
+ import { CambiarEstadoDto, FiltroSolicitudesDto } from '../solicitudes/solicitudes.schema';
+ import { SolicitudesService } from '../solicitudes/solicitudes.service';
+ 
++export class EliminarClienteDto {
++  @IsOptional()
++  @Matches(/^\d{13}$/, { message: 'El DPI debe tener 13 dígitos' })
++  dpi?: string;
++
++  @IsOptional()
++  @IsEmail()
++  @MaxLength(160)
++  correo?: string;
++}
++
+ export class MensajeBancoDto {
+   @IsString()
+   @MinLength(1)
+@@ -79,6 +90,13 @@ export class AdminController {
+     return this.cuentas.abonoExterno(dto);
+   }
+ 
++  /** CP Gestiones eliminó al cliente: se borra aquí su ficha y todo lo que depende de ella. Header `X-Service-Key`. */
++  @Post('clientes/eliminar')
++  @HttpCode(200)
++  eliminarCliente(@Body() dto: EliminarClienteDto) {
++    return this.clientes.eliminarDesdeCp(dto.dpi, dto.correo);
++  }
++
+   /** CP Gestiones abrió una cuenta (ahorro o monetaria): se registra aquí enlazada al cliente por DPI. Idempotente. */
+   @Post('cuentas')
+   @HttpCode(200)
+diff --git a/backend/banca-virtual-api/src/clientes/clientes.service.ts b/backend/banca-virtual-api/src/clientes/clientes.service.ts
+index 156f54f..3b69b29 100644
+--- a/backend/banca-virtual-api/src/clientes/clientes.service.ts
++++ b/backend/banca-virtual-api/src/clientes/clientes.service.ts
+@@ -1,5 +1,5 @@
+-import { Injectable, NotFoundException } from '@nestjs/common';
+-import { encrypt, maskDocument } from '../common/crypto.util';
++import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
++import { blindIndex, encrypt, maskDocument } from '../common/crypto.util';
+ import { DatabaseService, Queryable } from '../database/database.service';
+ import { CLIENTE_COLS, Cliente, ClienteRow, UpdatePerfilDto, mapCliente } from './clientes.schema';
+ 
+@@ -21,6 +21,35 @@ export interface NuevoCliente {
+ export class ClientesService {
+   constructor(private readonly db: DatabaseService) {}
+ 
++  /**
++   * CP Gestiones eliminó al cliente: se borra aquí su ficha y TODO lo que depende de ella (cuentas, movimientos,
++   * transferencias, tarjetas, préstamos, pagos, solicitudes, sesiones, notificaciones…), para que pueda
++   * registrarse de nuevo con el mismo DPI y correo. Se busca por DPI o correo; nunca borra administradores.
++   * Idempotente: si no existe responde eliminado: false.
++   */
++  async eliminarDesdeCp(dpi?: string, correo?: string): Promise<{ ok: true; eliminado: boolean }> {
++    if (!dpi && !correo) throw new BadRequestException('Indica dpi o correo');
++    return this.db.transaction(async (tx) => {
++      const fichas = await this.db.rows<{ id: string }>(
++        `SELECT id FROM clientes WHERE rol = 'CLIENTE' AND (($1::text IS NOT NULL AND dpi_hash = $1) OR ($2::text IS NOT NULL AND email = $2))`,
++        [dpi ? blindIndex(dpi) : null, correo ? correo.toLowerCase() : null],
++        tx,
++      );
++      for (const { id } of fichas) {
++        const cuentas = `(SELECT id FROM cuentas WHERE cliente_id = $1)`;
++        await tx.query(`DELETE FROM abonos_externos WHERE cuenta_id IN ${cuentas}`, [id]);
++        await tx.query(`DELETE FROM transferencias WHERE cuenta_origen_id IN ${cuentas} OR cuenta_destino_id IN ${cuentas}`, [id]);
++        await tx.query(`DELETE FROM transferencias_programadas WHERE cliente_id = $1 OR cuenta_origen_id IN ${cuentas}`, [id]);
++        await tx.query(`DELETE FROM pagos_servicios WHERE cliente_id = $1 OR cuenta_id IN ${cuentas}`, [id]);
++        await tx.query(`DELETE FROM prestamos WHERE cliente_id = $1 OR cuenta_desembolso_id IN ${cuentas}`, [id]);
++        await tx.query('DELETE FROM tarjetas WHERE cliente_id = $1', [id]);
++        // El resto (cuentas y movimientos, solicitudes, sesiones, notificaciones, beneficiarios…) cae por ON DELETE CASCADE
++        await tx.query("DELETE FROM clientes WHERE id = $1 AND rol = 'CLIENTE'", [id]);
++      }
++      return { ok: true as const, eliminado: fichas.length > 0 };
++    });
++  }
++
+   async obtener(id: string): Promise<Cliente> {
+     const row = await this.db.one<ClienteRow>(`SELECT ${CLIENTE_COLS} FROM clientes WHERE id = $1`, [id]);
+     if (!row) throw new NotFoundException('Cliente no encontrado');
+diff --git a/database/09_limpieza_clientes.sql b/database/09_limpieza_clientes.sql
+new file mode 100644
+index 0000000..1b11154
+--- /dev/null
++++ b/database/09_limpieza_clientes.sql
+@@ -0,0 +1,31 @@
++-- =====================================================================
++-- CP BancaVirtual - Limpieza de clientes para comenzar de nuevo (coordinada con CP Gestiones)
++-- Borra TODOS los clientes (rol CLIENTE) y todo lo que depende de ellos: cuentas, movimientos,
++-- transferencias, tarjetas, préstamos, pagos de servicios, solicitudes, notificaciones, sesiones…
++-- Conserva: estructura, catálogo de servicios, administradores (rol ADMIN) y sus sesiones.
++-- Correr UNA vez, después de reiniciar los datos en CP Gestiones. Todo o nada (transacción).
++-- =====================================================================
++BEGIN;
++
++DELETE FROM abonos_externos;
++DELETE FROM transferencias;
++DELETE FROM transferencias_programadas;
++DELETE FROM pagos_servicios;
++DELETE FROM prestamo_cuotas;
++DELETE FROM prestamos;
++DELETE FROM tarjeta_movimientos;
++DELETE FROM tarjetas;
++DELETE FROM movimientos;
++DELETE FROM cuentas;
++DELETE FROM solicitudes;
++DELETE FROM beneficiarios;
++DELETE FROM notificaciones WHERE cliente_id IN (SELECT id FROM clientes WHERE rol = 'CLIENTE');
++DELETE FROM sesiones WHERE cliente_id IN (SELECT id FROM clientes WHERE rol = 'CLIENTE');
++DELETE FROM push_suscripciones WHERE cliente_id IN (SELECT id FROM clientes WHERE rol = 'CLIENTE');
++DELETE FROM clientes WHERE rol = 'CLIENTE';
++
++COMMIT;
++
++-- Comprobación: todo en 0 (excepto administradores)
++SELECT (SELECT count(*) FROM clientes WHERE rol = 'CLIENTE') AS clientes, (SELECT count(*) FROM cuentas) AS cuentas,
++       (SELECT count(*) FROM movimientos) AS movimientos, (SELECT count(*) FROM tarjetas) AS tarjetas, (SELECT count(*) FROM prestamos) AS prestamos;

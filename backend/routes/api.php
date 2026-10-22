@@ -65,7 +65,6 @@ Route::prefix('v1')->group(function () {
         $post('/usuarios', AdminController::class, 'user', 'usuarios.store', 'usuarios.write');
         Route::patch('/usuarios/{id}', [AdminController::class, 'updateUser'])->name('usuarios.update')->middleware('permit:usuarios.write');
         $post('/clientes', AdminController::class, 'customer', 'clientes.store', 'clientes.write');
-        Route::patch('/productos/{id}', [AdminController::class, 'product'])->name('productos.update')->middleware('permit:productos.write');
         $post('/cuentas', AccountController::class, 'store', 'cuentas.store', 'cuentas.write');
         Route::patch('/cuentas/{id}/estado', [AccountController::class, 'state'])->name('cuentas.state')->middleware('permit:cuentas.manage');
         Route::get('/cuentas/{id}/movimientos', [AccountController::class, 'movements'])->middleware('permit:cuentas.read');
@@ -104,6 +103,13 @@ Route::prefix('v1')->group(function () {
         Route::get('/reportes/transacciones', [ReportController::class, 'transactions'])->middleware('permit:reportes.transacciones');
         Route::get('/clientes/{id}/eliminacion', [AdminController::class, 'deletionSummary'])->middleware('permit:clientes.manage')->where('id', '[a-f0-9]{24}');
         $post('/clientes/{id}/eliminar', AdminController::class, 'deleteCustomer', 'clientes.eliminar', 'clientes.manage');
+        Route::get('/empresas/{id}/eliminacion', [AdminController::class, 'companyDeletionSummary'])->middleware('permit:empresas.write')->where('id', '[a-f0-9]{24}');
+        $post('/empresas/{id}/eliminar', AdminController::class, 'deleteCompany', 'empresas.eliminar', 'empresas.write');
+        // The administrator adds funds to the master account (vault).
+        Route::get('/concentradora', [AdminController::class, 'vault'])->middleware('permit:concentradora.fondear');
+        $post('/concentradora/ingresos', AdminController::class, 'fundVault', 'concentradora.ingreso', 'concentradora.fondear');
+        // Fresh start of customers and banking data (only the protected original administrator).
+        $post('/mantenimiento/limpieza-total', AdminController::class, 'resetAll', 'mantenimiento.limpieza', 'mantenimiento.limpieza');
         Route::get('/clientes/{id}/acceso', [CustomerAccessController::class, 'show'])->middleware('permit:clientes.read')->where('id', '[a-f0-9]{24}');
         Route::patch('/clientes/{id}/acceso', [CustomerAccessController::class, 'update'])->name('clientes.acceso')->middleware('permit:clientes.manage')->where('id', '[a-f0-9]{24}');
         $post('/clientes/{id}/sesiones/cerrar', CustomerAccessController::class, 'closeSessions', 'clientes.sesiones', 'clientes.manage');

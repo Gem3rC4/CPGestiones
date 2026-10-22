@@ -22,7 +22,7 @@ class OutboxService
         foreach (OutboxEvent::where('status', 'pendiente')->orderBy('created_at')->orderBy('_id')->limit(50)->get() as $event) {
             $system = match ($event->type) {
                 'riesgo.solicitado' => 'riesgos',
-                'banca.abono', 'banca.cuenta' => 'banca_abonos',
+                'banca.abono', 'banca.cuenta', 'banca.cliente_eliminado' => 'banca_abonos',
                 default => 'banca',
             };
             $target = $targets[$system];
@@ -41,7 +41,9 @@ class OutboxService
                 continue;
             }
             try {
-                if ($event->type === 'banca.cuenta') {
+                if ($event->type === 'banca.cliente_eliminado') {
+                    $outcome = $this->sendCustomerDeletion($event, $url, $target['secret']);
+                } elseif ($event->type === 'banca.cuenta') {
                     $outcome = $this->sendAccount($event, self::accountsUrl($url), $target['secret']);
                 } elseif ($system === 'banca_abonos') {
                     $outcome = $this->sendCredit($event, $url, $target['secret']);
@@ -54,7 +56,9 @@ class OutboxService
             }
             $attempt = (int) $event->attempts + 1;
             if ($outcome['status'] === 'enviado') {
-                OutboxEvent::where('_id', $event->id)->where('lease', $lease)->update(['status' => 'enviado', 'sent_at' => now()->toIso8601String(), 'attempts' => $attempt, 'respuesta' => $outcome['respuesta'] ?? null, 'last_error' => null]);
+                // A deleted customer's DPI and e-mail are not kept once Banca Virtual confirmed it.
+                OutboxEvent::where('_id', $event->id)->where('lease', $lease)->update(['status' => 'enviado', 'sent_at' => now()->toIso8601String(), 'attempts' => $attempt, 'respuesta' => $outcome['respuesta'] ?? null, 'last_error' => null]
+                    + ($event->type === 'banca.cliente_eliminado' ? ['payload' => []] : []));
                 $sent++;
             } else {
                 $failed = $outcome['status'] === 'rechazado' || $attempt >= self::MAX_ATTEMPTS;
@@ -94,6 +98,27 @@ class OutboxService
         $base = rtrim($creditsUrl, '/');
 
         return (str_ends_with($base, '/abonos') ? substr($base, 0, -7) : dirname($base)).'/cuentas';
+    }
+
+    /**
+     * POST /admin/clientes/eliminar of Banca Virtual: deletes its copy of a customer deleted here (found by DPI
+     * or e-mail). 404 means it never had one: nothing to delete.
+     */
+    private function sendCustomerDeletion(OutboxEvent $event, string $creditsUrl, string $key): array
+    {
+        $base = rtrim($creditsUrl, '/');
+        $url = (str_ends_with($base, '/abonos') ? substr($base, 0, -7) : dirname($base)).'/clientes/eliminar';
+        $response = Http::timeout(30)->connectTimeout(10)->withoutRedirecting()->acceptJson()->withHeaders(['X-Service-Key' => $key])->post($url, (array) $event->payload);
+        $status = $response->status();
+        if ($response->successful() || $status === 404) {
+            return ['status' => 'enviado', 'respuesta' => ['eliminado' => $status !== 404 && (bool) $response->json('eliminado', true)]];
+        }
+
+        return match (true) {
+            $status === 401 || $status === 403 => ['status' => 'reintentar', 'error' => 'BancaVirtual rechazó la llave de servicio. Revísala en Integraciones.'],
+            in_array($status, [400, 422], true) => ['status' => 'rechazado', 'error' => 'BancaVirtual no eliminó al cliente'.(($m = $this->messageOf($response)) ? ': '.$m : '.')],
+            default => ['status' => 'reintentar', 'error' => 'BancaVirtual respondió con un error HTTP '.$status.'.'],
+        };
     }
 
     /**

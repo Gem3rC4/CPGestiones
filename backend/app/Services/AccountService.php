@@ -54,7 +54,7 @@ class AccountService
             throw ValidationException::withMessages(['monto_apertura' => 'El monto mínimo de apertura es Q100.00.']);
         }
         if ($customer) {
-            $existing = Account::where('cliente_id', (string) $customer->id)->where('tipo', $product->type)->whereNull('system_key')->first();
+            $existing = Account::where('cliente_id', (string) $customer->id)->where('tipo', $product->type)->whereNull('system_key')->where('estado', '!=', 'cerrada')->first();
             if ($existing) {
                 throw new BusinessException('El cliente ya tiene una cuenta '.($product->type === 'ahorro' ? 'de ahorro' : 'monetaria').' (número '.$existing->numero.'). Cada cliente puede tener una cuenta de cada tipo.', 'ACCOUNT_EXISTS', 409);
             }
@@ -118,6 +118,31 @@ class AccountService
 
         return ['transaccion_id' => $movement['transaccion_id'], 'monto_centavos' => $cents, 'concepto' => $concept, 'saldo_anterior_centavos' => $before, 'saldo_centavos' => $after,
             'saldo' => Money::format($after), 'responsable' => $actor, 'fecha' => now()->toIso8601String()];
+    }
+
+    /**
+     * Closes a savings or checking account: the customer takes the remaining balance (it leaves the bank, so it
+     * is also subtracted from the master account) and the account stays closed, with balance Q0.00.
+     * Caller holds the transaction.
+     */
+    public function close(Account $account, string $actor, string $reason): array
+    {
+        if ($account->system_key) {
+            throw new BusinessException('La cuenta interna no admite esta acción.', 'FORBIDDEN', 403);
+        }
+        if ($account->estado === 'cerrada') {
+            throw new BusinessException('La cuenta ya está cerrada.', 'ACCOUNT_CLOSED', 409);
+        }
+        $balance = (int) $account->saldo_centavos;
+        $withdrawal = null;
+        if ($balance > 0) {
+            $account->update(['estado' => 'activa']);
+            $withdrawal = $this->cashOut((string) $account->id, $balance, $actor, 'Cierre de cuenta '.$account->numero.': el cliente retira su saldo', 'cierre_cuenta');
+        }
+        $account->refresh()->update(['estado' => 'cerrada', 'cerrada_el' => now()->toIso8601String(), 'motivo_cierre' => $reason]);
+        app(SecurityService::class)->record('cuenta_cerrada', $actor, ['cuenta_id' => (string) $account->id, 'saldo_retirado_centavos' => $balance]);
+
+        return $account->refresh()->toArray() + ['saldo_retirado_centavos' => $balance, 'saldo_retirado' => Money::format($balance), 'transaccion_id' => $withdrawal['transaccion_id'] ?? null];
     }
 
     public function cashOutAccount(): Account
@@ -220,7 +245,7 @@ class AccountService
         if (! $this->repository->debit($sourceId, $cents, in_array($source->system_key, self::COUNTERPARTY_ACCOUNTS, true))) {
             throw new BusinessException('La cuenta de origen no tiene fondos suficientes.', 'INSUFFICIENT_FUNDS');
         }
-        if (! $this->repository->credit($targetId, $cents)) {
+        if (! $this->repository->credit($targetId, $cents, (bool) $target->system_key)) {
             throw new BusinessException('La cuenta de destino excedería su límite de saldo.', 'BALANCE_LIMIT');
         }
         $tx = (string) Str::uuid();

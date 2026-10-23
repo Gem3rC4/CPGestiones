@@ -32,7 +32,7 @@ class OperationRequest extends FormRequest
                 'antiguedad_laboral_meses' => 'required|integer|min:0|max:1500'],
             // The opening amount (minimum Q100.00) becomes the first balance of the account.
             'cuentas.store' => ['cliente_id' => $id, 'producto' => 'required|in:ahorro,monetaria', 'monto_apertura' => $money] + $scope,
-            'cuentas.state' => ['estado' => 'required|in:activa,bloqueada', 'nota' => 'required|string|min:5|max:500'],
+            'cuentas.state' => ['estado' => 'required|in:activa,bloqueada,cerrada', 'nota' => 'required|string|min:5|max:500'],
             'transferencias.store' => ['origen_id' => $id, 'destino_id' => 'required_without:destino_numero|prohibits:destino_numero|string|regex:/^[a-f0-9]{24}$/D', 'destino_numero' => 'required_without:destino_id|string|regex:/^[0-9]{10}$/D', 'monto' => $money, 'concepto' => 'required|string|min:3|max:160'] + $scope,
             'caja.store' => ['cuenta_id' => $id, 'monto' => $money, 'tipo' => 'required|in:deposito,retiro', 'concepto' => 'required|string|min:3|max:160'],
             'solicitudes.store' => ['cliente_id' => $id, 'producto' => 'required|string|max:60', 'limite_solicitado' => ['sometimes', 'string', 'regex:/^(0|[1-9][0-9]{0,9})(\.[0-9]{1,2})?$/D'], 'cuenta_id' => 'sometimes|nullable|string|regex:/^[a-f0-9]{24}$/D'] + $scope,

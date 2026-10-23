@@ -1,0 +1,18 @@
+diff --git a/backend/banca-virtual-api/src/solicitudes/solicitudes.service.ts b/backend/banca-virtual-api/src/solicitudes/solicitudes.service.ts
+index ae318f4..04d41db 100644
+--- a/backend/banca-virtual-api/src/solicitudes/solicitudes.service.ts
++++ b/backend/banca-virtual-api/src/solicitudes/solicitudes.service.ts
+@@ -51,6 +51,13 @@ export class SolicitudesService {
+     );
+     if (vigente) throw new ConflictException('Ya tienes una solicitud vigente para este producto');
+ 
++    // Bloqueo temprano: el DPI del formulario debe ser el del cliente con la sesión activa. Si no coincide, la
++    // solicitud se detiene aquí: no se evalúa en el CORE (Analítica) ni se envía a CP Gestiones.
++    const titular = await this.clientes.obtener(clienteId);
++    if (titular.dpi && titular.dpi !== dto.dpi.trim()) {
++      throw new UnprocessableEntityException('El DPI ingresado no coincide con el de su cuenta. Por favor, ingrese su DPI correctamente');
++    }
++
+     const payload: CoreEvaluacionRequest = {
+       productoCodigo: dto.productoCodigo,
+       primerNombre: dto.primerNombre.trim(),

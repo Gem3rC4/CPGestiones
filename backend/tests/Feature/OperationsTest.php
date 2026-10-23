@@ -1086,7 +1086,7 @@ final class OperationsTest extends TestCase
         $this->postJson('/api/v1/clientes/'.$rich->id.'/eliminar', ['nota' => 'Solicitud del cliente'], $this->headers())->assertOk()->assertJsonPath('data.eliminado', true);
         self::assertNull(Customer::find($rich->id));
         self::assertSame(0, Account::where('cliente_id', (string) $rich->id)->count() + Card::where('cliente_id', (string) $rich->id)->count() + Credit::where('cliente_id', (string) $rich->id)->count() + CardApplication::where('cliente_id', (string) $rich->id)->count());
-        self::assertSame($before + 30000, $vault(), 'The remaining balance goes back to the vault.');
+        self::assertSame($before - 30000, $vault(), 'Closing the accounts: the holder takes the balance, it leaves the vault.');
         self::assertSame(0, (int) Account::sum('saldo_centavos'));
         self::assertSame(0, Movement::where('cuenta_id', (string) $account->id)->count(), 'The customer movements are deleted too.');
         self::assertSame(0, SecurityEvent::where('detail.cliente_id', (string) $rich->id)->count());
@@ -1165,7 +1165,7 @@ final class OperationsTest extends TestCase
         self::assertNull(Company::find($company['id']));
         self::assertSame(0, Account::where('empresa_id', $company['id'])->count() + Payroll::where('empresa_id', $company['id'])->count() + User::where('empresa_id', $company['id'])->count());
         self::assertSame(0, Movement::where('cuenta_id', (string) $companyAccount->id)->count());
-        self::assertSame($before + 40000, $vault(), 'The company balance goes back to the vault.');
+        self::assertSame($before - 40000, $vault(), 'Closing the company accounts: the balance leaves the vault.');
         self::assertSame(10000, $employeeAccount->refresh()->saldo_centavos, 'The employee keeps their money and history.');
         self::assertSame(0, (int) Account::sum('saldo_centavos'));
         $this->getJson('/api/v1/empresas', $this->headers())->assertOk()->assertJsonCount(0, 'data.data');
@@ -1293,5 +1293,49 @@ final class OperationsTest extends TestCase
         $buy('500.00', 'Lo liberado')->assertCreated()->assertJsonPath('data.disponible_centavos', 0);
         $this->postJson('/api/v1/tarjetas/'.$card->id.'/pagos', ['dpi' => '3068226670601', 'monto' => '1.00', 'origen_numero' => '9999999999'], $this->headers($bank))->assertNotFound();
         self::assertSame(['aprobada' => 5, 'rechazada' => 4], CardPurchase::where('tarjeta_id', (string) $card->id)->get()->countBy('estado')->sortKeys()->all());
+    }
+
+    public function test_vault_accepts_a_large_deposit_from_the_bank_capital(): void
+    {
+        app(InstallService::class)->fundMasterAccount();
+        $start = Account::where('system_key', 'concentradora')->firstOrFail()->saldo_centavos;
+        $this->postJson('/api/v1/concentradora/ingresos', ['monto' => '1000000000.00', 'concepto' => 'Aporte de capital de inversionistas'], $this->headers())->assertCreated()
+            ->assertJsonPath('data.saldo_centavos', $start + 100000000000);
+        $this->postJson('/api/v1/concentradora/ingresos', ['monto' => '1000000000.01', 'concepto' => 'Más del máximo por operación'], $this->headers())->assertUnprocessable();
+        self::assertSame(0, (int) Account::sum('saldo_centavos'));
+    }
+
+    public function test_closing_an_account_hands_the_balance_to_the_customer_and_subtracts_it_from_the_vault(): void
+    {
+        app(InstallService::class)->fundMasterAccount();
+        $vault = fn (): int => (int) Account::where('system_key', 'concentradora')->firstOrFail()->saldo_centavos;
+        $c = $this->customer('close');
+        $account = Account::create(['cliente_id' => (string) $c->id, 'numero' => '7777777777', 'tipo' => 'ahorro', 'estado' => 'activa', 'moneda' => 'GTQ', 'saldo_centavos' => 0, 'tasa_bps' => 0]);
+        $this->postJson('/api/v1/caja', ['cuenta_id' => (string) $account->id, 'tipo' => 'deposito', 'monto' => '300.00', 'concepto' => 'Depósito'], $this->headers())->assertCreated();
+        $before = $vault();
+        $this->patchJson('/api/v1/cuentas/'.$account->id.'/estado', ['estado' => 'cerrada', 'nota' => 'Cierre solicitado por el cliente.'], $this->headers())->assertOk()
+            ->assertJsonPath('data.estado', 'cerrada')->assertJsonPath('data.saldo_retirado_centavos', 30000);
+        self::assertSame([0, 'cerrada'], [$account->refresh()->saldo_centavos, $account->estado]);
+        self::assertSame($before - 30000, $vault(), 'The customer takes the money: it leaves the vault.');
+        self::assertSame(0, (int) Account::sum('saldo_centavos'));
+        $this->patchJson('/api/v1/cuentas/'.$account->id.'/estado', ['estado' => 'activa', 'nota' => 'Intento de reabrir.'], $this->headers())->assertConflict()->assertJsonPath('code', 'ACCOUNT_CLOSED');
+        $this->postJson('/api/v1/caja', ['cuenta_id' => (string) $account->id, 'tipo' => 'deposito', 'monto' => '1.00', 'concepto' => 'Después del cierre'], $this->headers())->assertConflict();
+    }
+
+    public function test_liquidating_a_loan_returns_the_capital_to_the_vault(): void
+    {
+        app(InstallService::class)->fundMasterAccount();
+        $vault = fn (): int => (int) Account::where('system_key', 'concentradora')->firstOrFail()->saldo_centavos;
+        $start = $vault();
+        $customer = Customer::create(['nombre' => 'Cliente liquidación', 'dpi' => '5555666677770', 'email' => 'liquida@example.test', 'active' => true]);
+        $account = $this->account($customer, 0);
+        $app = app(IdempotencyService::class)->run((string) $this->admin->id, 'create-loan-liq', 'application', [], fn () => app(ApplicationService::class)->create(['cliente_id' => (string) $customer->id, 'producto' => 'credito-personal', 'limite_solicitado' => '12000.00', 'origen' => 'banca_virtual'], 'service:banca', preEvaluated: true));
+        $this->postJson('/api/v1/solicitudes/'.$app['id'].'/transiciones', ['version' => 1, 'estado' => 'emitida', 'limite_asignado' => '12000.00', 'nota' => 'Préstamo aprobado', 'plazo_meses' => 3, 'tasa_anual' => '0', 'dia_pago' => 28, 'cuenta_id' => (string) $account->id], $this->headers())->assertOk();
+        self::assertSame($start - 1200000, $vault(), 'The loan was disbursed from the vault.');
+        $credit = Credit::firstOrFail();
+        $pending = $this->getJson('/api/v1/creditos/'.$credit->id, $this->headers())->assertOk()->json('data.pendiente_total_centavos');
+        $this->postJson('/api/v1/creditos/'.$credit->id.'/pagos', ['origen_id' => (string) $account->id, 'monto' => Money::format($pending)], $this->headers())->assertCreated();
+        self::assertSame('pagado', $credit->refresh()->estado);
+        self::assertSame($start, $vault(), 'Liquidating the loan returns the capital to the vault.');
     }
 }

@@ -1,8 +1,26 @@
 diff --git a/backend/banca-virtual-api/src/tarjetas/tarjetas.service.ts b/backend/banca-virtual-api/src/tarjetas/tarjetas.service.ts
-index 0fb7838..b335ee4 100644
+index 74998cf..07755e6 100644
 --- a/backend/banca-virtual-api/src/tarjetas/tarjetas.service.ts
 +++ b/backend/banca-virtual-api/src/tarjetas/tarjetas.service.ts
-@@ -213,8 +213,17 @@ export class TarjetasService {
+@@ -90,15 +90,8 @@ export class TarjetasService {
+         const estado = String(c.estado ?? 'activa').toLowerCase().startsWith('activ') ? 'ACTIVA' : 'BLOQUEADA';
+         const limite = c.limite_centavos !== undefined ? Number(c.limite_centavos) / 100 : null;
+         const usadoCp = c.principal_centavos !== undefined ? (Number(c.principal_centavos) + Number(c.interes_centavos ?? 0)) / 100 : null;
+-        // CP aún no conoce las compras hechas desde CP BancaVirtual: se suman (consumos - pagos locales) al saldo que informa CP,
+-        // para que el crédito disponible y el límite se respeten. Cuando CP registre los consumos, esto se retira.
+-        const neto = await this.db
+-          .one<{ neto: string }>(
+-            `SELECT COALESCE(SUM(CASE WHEN tipo = 'CONSUMO' THEN monto ELSE -monto END), 0)::text AS neto FROM tarjeta_movimientos WHERE tarjeta_id = $1`,
+-            [r.id],
+-          )
+-          .catch(() => null);
+-        const usado = usadoCp !== null ? Math.max(0, usadoCp + Number(neto?.neto ?? 0)) : null;
++        // Las compras y los pagos de las tarjetas del banco pasan por CP Gestiones: su deuda ya los incluye (no se suman los locales)
++        const usado = usadoCp;
+         const antes = await this.db.one<{ estado: string }>('SELECT estado FROM tarjetas WHERE id = $1', [r.id]);
+         const [previa] = antes ? await this.conOrigen([{ id: r.id, estado: antes.estado }]) : [null];
+         // El bloqueo que puso el cliente aquí se respeta aunque CP aún no lo muestre
+@@ -222,8 +215,17 @@ export class TarjetasService {
    }
  
    /** Paga la tarjeta con dinero de una cuenta del cliente. */
@@ -20,7 +38,7 @@ index 0fb7838..b335ee4 100644
      const r = await this.db.transaction(async (tx) => {
        const t = await this.db.one<Tarjeta>(
          `SELECT ${TARJETA_COLS} FROM tarjetas WHERE id = $1 AND cliente_id = $2 FOR UPDATE`,
-@@ -233,6 +242,12 @@ export class TarjetasService {
+@@ -242,6 +244,12 @@ export class TarjetasService {
        const saldo = toCents(cuenta.saldo);
        if (saldo < montoCents) throw new UnprocessableEntityException('Fondos insuficientes en la cuenta');
  
@@ -33,7 +51,7 @@ index 0fb7838..b335ee4 100644
        const nuevoSaldo = fromCents(saldo - montoCents);
        const referencia = 'TDC-' + randomBytes(6).toString('hex').toUpperCase();
        await tx.query('UPDATE cuentas SET saldo = $1 WHERE id = $2', [nuevoSaldo, cuenta.id]);
-@@ -255,11 +270,33 @@ export class TarjetasService {
+@@ -264,11 +272,33 @@ export class TarjetasService {
        `Se aplicaron Q${monto.toFixed(2)} a tu tarjeta terminada en ${r.ultimos4}. Ref. ${r.referencia}.`,
        '/tarjetas',
      );

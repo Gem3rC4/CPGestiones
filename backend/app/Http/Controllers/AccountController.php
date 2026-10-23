@@ -67,6 +67,12 @@ class AccountController extends ApiController
             if ($account->system_key) {
                 throw new BusinessException('La cuenta interna no admite esta acción.', 'FORBIDDEN', 403);
             }
+            if ($d['estado'] === 'cerrada') {
+                return app(AccountService::class)->close($account, $a, $d['nota']);
+            }
+            if ($account->estado === 'cerrada') {
+                throw new BusinessException('La cuenta está cerrada y no puede reactivarse.', 'ACCOUNT_CLOSED', 409);
+            }
             $account->update(['estado' => $d['estado']]);
             app(SecurityService::class)->record('estado_cuenta', $a, ['cuenta_id' => $id, 'estado' => $d['estado'], 'nota' => $d['nota']]);
 

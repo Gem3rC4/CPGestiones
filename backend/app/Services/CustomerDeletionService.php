@@ -148,12 +148,12 @@ class CustomerDeletionService
      */
     private function purgeAccounts(array $accounts, string $actor, bool $returnBalance): void
     {
-        $master = $returnBalance ? (string) $this->accounts->master()->id : null;
         $ids = [];
         foreach ($accounts as $account) {
-            if ($master && (int) $account->saldo_centavos > 0) {
+            // Closing an account: the holder takes the balance, so it is subtracted from the master account.
+            if ($returnBalance && (int) $account->saldo_centavos > 0) {
                 $account->update(['estado' => 'activa']);
-                $this->accounts->move((string) $account->id, $master, (int) $account->saldo_centavos, $actor, 'Cierre de cuenta '.$account->numero.' por eliminación', 'cierre_cuenta');
+                $this->accounts->cashOut((string) $account->id, (int) $account->saldo_centavos, $actor, 'Cierre de cuenta '.$account->numero.' por eliminación', 'cierre_cuenta');
             }
             $ids[] = (string) $account->id;
         }

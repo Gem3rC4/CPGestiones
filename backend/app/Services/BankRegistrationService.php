@@ -18,41 +18,27 @@ class BankRegistrationService
 
     /**
      * Creates the Banca Virtual access with the fields of the app's sign-up form (name, last name, e-mail,
-     * password, DPI and birth date). DPI is the link: a customer the bank already registered is linked when the
-     * other data match, and their accounts are sent to Banca Virtual with the same numbers. A DPI the bank does
-     * not know yet gets its access profile only; accounts are always opened in Gestiones.
+     * password, DPI and birth date). DPI is the link: only a customer the bank already registered can sign up;
+     * they are linked when the other data match, and their accounts are sent to Banca Virtual with the same numbers.
      * An account number is optional: when sent, it must belong to that DPI.
      * The controller's IdempotencyService holds the transaction.
      */
     public function register(array $data, string $actor): array
     {
         $customer = $this->customers->byDpi($data['dpi']);
+        if (! $customer) {
+            throw new BusinessException('El DPI no existe en la base de datos, digite uno válido.', 'CUSTOMER_NOT_FOUND', 404);
+        }
+        if ($customer->password) {
+            // Banca Virtual also calls this before each gestión to confirm the customer exists: it continues on this code.
+            throw new BusinessException('El usuario ya tiene una cuenta creada.', 'CUSTOMER_EXISTS', 409);
+        }
         $emailOwner = Customer::where('email', $data['correo_electronico'])->first();
         $referenceOwner = isset($data['cliente_ref']) ? Customer::where('external_ref', $data['cliente_ref'])->first() : null;
-        if ($customer?->password) {
-            throw new BusinessException('Este DPI ya tiene acceso a Banca Virtual. Ingresa con tu correo y contraseña.', 'CUSTOMER_EXISTS', 409);
-        }
         foreach ([$emailOwner, $referenceOwner] as $owner) {
-            if ($owner && (! $customer || (string) $owner->id !== (string) $customer->id)) {
-                throw new BusinessException('Ya existe un registro con ese correo electrónico. Ingresa con tu correo y contraseña.', 'CUSTOMER_EXISTS', 409);
+            if ($owner && (string) $owner->id !== (string) $customer->id) {
+                throw new BusinessException('Ese correo electrónico ya pertenece a otro cliente. Usa el correo que registraste en el banco.', 'CUSTOMER_EXISTS', 409);
             }
-        }
-        if (! $customer) {
-            if (isset($data['numero_cuenta'])) {
-                throw new BusinessException('El número de cuenta no pertenece al DPI ingresado.', 'ACCOUNT_MISMATCH', 422);
-            }
-            $customer = $this->customers->create($this->profileData($data) + [
-                'dpi' => $data['dpi'], 'email' => $data['correo_electronico'],
-                'nombre' => $data['nombre'].' '.$data['apellido'], 'nombres' => $data['nombre'], 'apellidos' => $data['apellido'],
-                'fecha_nacimiento' => $data['fecha_nacimiento'], 'perfil_version' => 1, 'origen' => 'banca_virtual',
-                'password' => Hash::make($data['contrasena']), 'active' => true, 'failed_attempts' => 0, 'acceso_app_desde' => now()->toIso8601String(),
-                // The unique index on external_ref only covers strings; omit the field instead of storing null.
-            ] + (isset($data['cliente_ref']) ? ['external_ref' => $data['cliente_ref']] : []));
-            $this->security->record('cliente_registrado_banca', $actor, ['cliente_id' => (string) $customer->id]);
-            app(AlertService::class)->publish('cliente.registrado:'.$customer->id, 'clientes.read', 'Cliente registrado', 'Una persona creó su acceso en Banca Virtual; aún no tiene cuentas en el banco.', 'clientes', (string) $customer->id);
-            $summary = $this->summary($customer);
-
-            return ['cliente' => $summary['cliente'], 'vinculado' => false, 'cuenta' => null] + $summary;
         }
         $account = null;
         if (isset($data['numero_cuenta'])) {

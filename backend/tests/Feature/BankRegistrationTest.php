@@ -145,7 +145,8 @@ final class BankRegistrationTest extends TestCase
         $this->branchCustomer();
         $this->ana();
         $key = fn (): array => $this->headers('reg-'.bin2hex(random_bytes(5)));
-        $this->postJson('/api/v1/banca/registro', $this->payload(['dpi' => '9999999999999']), $key())->assertConflict()->assertJsonPath('code', 'CUSTOMER_EXISTS');
+        $this->postJson('/api/v1/banca/registro', $this->payload(['dpi' => '9999999999999']), $key())->assertNotFound()->assertJsonPath('code', 'CUSTOMER_NOT_FOUND')
+            ->assertJsonPath('message', 'El DPI no existe en la base de datos, digite uno válido.');
         foreach (['3123456789', '0000000000'] as $number) {
             $this->postJson('/api/v1/banca/registro', $this->payload(['numero_cuenta' => $number]), $key())->assertUnprocessable()->assertJsonPath('code', 'ACCOUNT_MISMATCH')
                 ->assertJsonPath('message', 'El número de cuenta no pertenece al DPI ingresado.');
@@ -159,7 +160,7 @@ final class BankRegistrationTest extends TestCase
         // Accents, case and spacing do not matter.
         $this->postJson('/api/v1/banca/registro', $this->payload(['nombre' => 'JUAN', 'apellido' => 'perez', 'nit' => '12345678']), $key())->assertCreated();
         $this->postJson('/api/v1/banca/registro', $this->payload(), $key())->assertConflict()->assertJsonPath('code', 'CUSTOMER_EXISTS')
-            ->assertJsonPath('message', 'Este DPI ya tiene acceso a Banca Virtual. Ingresa con tu correo y contraseña.');
+            ->assertJsonPath('message', 'El usuario ya tiene una cuenta creada.');
         $this->postJson('/api/v1/banca/registro', $this->minimal(['cliente_ref' => 'banca-juan-001']), $key())->assertConflict()->assertJsonPath('code', 'CUSTOMER_EXISTS');
         self::assertSame(2, Customer::count());
         self::assertSame(2, Account::whereNull('system_key')->count());
@@ -442,12 +443,13 @@ final class BankRegistrationTest extends TestCase
         self::assertSame(['banca.cuenta', 'banca.abono'], $events->pluck('type')->all(), 'The account goes to Banca Virtual with the same number, then its opening deposit.');
         self::assertSame(['3123456789', 'CP-6f1c2d3e-0000-4000-8000-000000000001', 15000], [$events[0]->payload['numero'], $events[1]->payload['referencia'], $events[1]->payload['monto_centavos']]);
 
-        // A DPI the bank does not know yet gets its access profile only; accounts are opened in Gestiones.
-        $new = $this->postJson('/api/v1/banca/registro', ['dpi' => '4000000000001', 'correo_electronico' => 'nuevo@ejemplo.com', 'nombre' => 'Elvis', 'apellido' => 'Morales'] + $form, $this->headers('su-03'))
-            ->assertCreated()->assertJsonPath('data.vinculado', false)->assertJsonPath('data.cuenta', null)->assertJsonPath('data.cuentas', [])->json('data');
-        self::assertSame('banca_virtual', Customer::findOrFail($new['cliente']['id'])->origen);
-        self::assertSame(1, Account::whereNull('system_key')->count());
-        $this->postJson('/api/v1/banca/registro', ['dpi' => '4000000000001', 'correo_electronico' => 'nuevo@ejemplo.com'] + $form, $this->headers('su-04'))->assertConflict()->assertJsonPath('code', 'CUSTOMER_EXISTS');
+        // A DPI the bank does not have is rejected: customers are registered in Gestiones first.
+        $this->postJson('/api/v1/banca/registro', ['dpi' => '4000000000001', 'correo_electronico' => 'nuevo@ejemplo.com', 'nombre' => 'Elvis', 'apellido' => 'Morales'] + $form, $this->headers('su-03'))
+            ->assertNotFound()->assertJsonPath('message', 'El DPI no existe en la base de datos, digite uno válido.');
+        self::assertSame(1, Customer::count());
+        // A DPI that already has access: clear message (Banca Virtual continues on this code before each gestión).
+        $this->postJson('/api/v1/banca/registro', $form, $this->headers('su-04'))->assertConflict()->assertJsonPath('code', 'CUSTOMER_EXISTS')
+            ->assertJsonPath('message', 'El usuario ya tiene una cuenta creada.');
     }
 
     public function test_gestiones_arrive_from_banca_with_the_detailed_data_and_staff_cannot_create_them(): void

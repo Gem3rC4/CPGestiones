@@ -8,6 +8,9 @@ final class Money
 {
     public const MAX = 100_000_000_000;
 
+    /** Ceiling of the bank's internal accounts (capital, master account…): Q10,000,000,000,000. */
+    public const LEDGER_MAX = 1_000_000_000_000_000;
+
     public static function cents(mixed $value, bool $allowZero = false): int
     {
         if (! is_string($value) || ! preg_match('/^(0|[1-9][0-9]{0,9})(\.[0-9]{1,2})?$/D', $value)) {

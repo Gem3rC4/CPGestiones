@@ -19,14 +19,15 @@ class AccountRepository
 
     public function debit(string $id, int $cents, bool $allowNegative = false): bool
     {
-        // Counterparty accounts may go negative down to -MAX; every other account needs funds.
-        $floor = $allowNegative ? $cents - Money::MAX : $cents;
+        // Counterparty accounts (the bank's capital, cash…) may go negative down to -LEDGER_MAX; every other account needs funds.
+        $floor = $allowNegative ? $cents - Money::LEDGER_MAX : $cents;
 
         return Account::where('_id', $id)->where('saldo_centavos', '>=', $floor)->decrement('saldo_centavos', $cents) === 1;
     }
 
-    public function credit(string $id, int $cents): bool
+    public function credit(string $id, int $cents, bool $internal = false): bool
     {
-        return Account::where('_id', $id)->where('saldo_centavos', '<=', Money::MAX - $cents)->increment('saldo_centavos', $cents) === 1;
+        // Customer and company accounts hold up to MAX; the bank's internal accounts (the vault) up to LEDGER_MAX.
+        return Account::where('_id', $id)->where('saldo_centavos', '<=', ($internal ? Money::LEDGER_MAX : Money::MAX) - $cents)->increment('saldo_centavos', $cents) === 1;
     }
 }

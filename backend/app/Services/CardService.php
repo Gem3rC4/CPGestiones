@@ -30,10 +30,14 @@ class CardService
             $clearing = Account::where('system_key', 'comercios')->firstOrFail();
             $result = app(AccountService::class)->move($card->cuenta_id, (string) $clearing->id, $c, $actor, $d['concepto'], 'consumo_debito');
         } else {
-            if ($card->principal_centavos + $card->interes_centavos + $c > $card->limite_centavos) {
-                throw new BusinessException('El consumo supera el crédito disponible.', 'CREDIT_LIMIT');
+            // Hard stop, evaluated atomically in the database: the debt only grows if, at that very moment,
+            // debt + purchase still fits in the limit. Two simultaneous purchases can never both overdraw it.
+            $charged = Card::where('_id', $card->id)->where('estado', 'activa')
+                ->whereRaw(['$expr' => ['$lte' => [['$add' => [['$ifNull' => ['$principal_centavos', 0]], ['$ifNull' => ['$interes_centavos', 0]], $c]], '$limite_centavos']]])
+                ->increment('principal_centavos', $c);
+            if ($charged !== 1) {
+                throw new BusinessException('Límite de crédito excedido: la compra supera el crédito disponible de la tarjeta.', 'LIMITE_EXCEDIDO', 422);
             }
-            $card->update(['principal_centavos' => $card->principal_centavos + $c]);
             // The bank pays the merchant from the master account; the customer now owes it on the card.
             $clearing = Account::where('system_key', 'comercios')->firstOrFail();
             $settled = app(AccountService::class)->move((string) app(AccountService::class)->master()->id, (string) $clearing->id, $c, $actor, 'Consumo con tarjeta '.$card->referencia.': '.$d['concepto'], 'consumo_credito');
@@ -53,7 +57,11 @@ class CardService
             throw new BusinessException('Solo las tarjetas de crédito reciben pagos.', 'INVALID_CARD', 422);
         }
         $this->owner($card, $d, $actor);
-        $source = Account::findOrFail($d['origen_id']);
+        // Banca Virtual knows the account by its number (the same in both systems).
+        $source = isset($d['origen_id']) ? Account::findOrFail($d['origen_id']) : Account::where('numero', $d['origen_numero'] ?? '')->whereNull('system_key')->first();
+        if (! $source) {
+            throw new BusinessException('No existe una cuenta con ese número.', 'ACCOUNT_NOT_FOUND', 404);
+        }
         if ($source->cliente_id !== $card->cliente_id) {
             throw new BusinessException('La cuenta debe pertenecer al titular.', 'INVALID_ACCOUNT', 422);
         }
@@ -182,8 +190,16 @@ class CardService
         $concept = 'Compra en '.$d['comercio'].(empty($d['concepto']) ? '' : ': '.$d['concepto']);
         $transaction = null;
         if ($code === 'APROBADA') {
-            $result = $this->charge($id, ['monto' => $d['monto'], 'concepto' => mb_substr($concept, 0, 160)] + array_intersect_key($d, array_flip(['dpi', 'cliente_ref'])), $actor);
-            $transaction = $result['referencia'] ?? $result['transaccion_id'] ?? null;
+            try {
+                $result = $this->charge($id, ['monto' => $d['monto'], 'concepto' => mb_substr($concept, 0, 160)] + array_intersect_key($d, array_flip(['dpi', 'cliente_ref'])), $actor);
+                $transaction = $result['referencia'] ?? $result['transaccion_id'] ?? null;
+            } catch (BusinessException $e) {
+                // Another purchase used the credit a moment earlier: rejected and logged like any other.
+                if (! in_array($e->errorCode, ['LIMITE_EXCEDIDO', 'INSUFFICIENT_FUNDS'], true)) {
+                    throw $e;
+                }
+                [$code, $reason] = $e->errorCode === 'LIMITE_EXCEDIDO' ? ['LIMITE_EXCEDIDO', 'La compra supera el crédito disponible de la tarjeta.'] : ['FONDOS_INSUFICIENTES', 'La cuenta de la tarjeta no tiene fondos suficientes.'];
+            }
         }
         $card->refresh();
         $log = CardPurchase::create(['tarjeta_id' => $id, 'tarjeta_referencia' => $card->referencia, 'ultimos_cuatro' => $card->ultimos_cuatro, 'tipo_tarjeta' => $card->tipo,

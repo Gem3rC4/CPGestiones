@@ -8,6 +8,7 @@ use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\Card;
 use App\Models\CardApplication;
+use App\Models\CardPurchase;
 use App\Models\Collaborator;
 use App\Models\Company;
 use App\Models\Credit;
@@ -1258,5 +1259,39 @@ final class OperationsTest extends TestCase
         self::assertSame(['9998887776665', 'borrar@example.test', 'llave-de-servicio-de-prueba-0001'], [$calls[0]['dpi'], $calls[0]['correo'], $calls[0]->header('X-Service-Key')[0]]);
         $event = OutboxEvent::where('type', 'banca.cliente_eliminado')->firstOrFail();
         self::assertSame(['enviado', []], [$event->status, (array) $event->payload]);
+    }
+
+    /**
+     * QA case: limit Q10,000. The purchases of the report (5,000 + 10,000 + 1,000 + 3,000) can never exceed it;
+     * once the limit is used up nothing else is approved until a payment frees credit.
+     */
+    public function test_credit_limit_is_a_hard_stop_until_a_payment_frees_credit(): void
+    {
+        app(InstallService::class)->fundMasterAccount();
+        $c = $this->customer('qa-limit');
+        $c->update(['dpi' => '3068226670601']);
+        $account = Account::create(['cliente_id' => (string) $c->id, 'numero' => '5356242050', 'tipo' => 'ahorro', 'estado' => 'activa', 'moneda' => 'GTQ', 'saldo_centavos' => 200000, 'tasa_bps' => 0]);
+        $card = Card::create(['cliente_id' => (string) $c->id, 'solicitud_id' => 'qa', 'referencia' => 'CP-B6F0DD1DCFBE', 'ultimos_cuatro' => '5811', 'tipo' => 'credito', 'estado' => 'activa', 'limite_centavos' => 1000000, 'principal_centavos' => 0, 'interes_centavos' => 0, 'cuenta_id' => (string) $account->id, 'emitida_el' => '2026-10-01', 'policy' => ['cutoff_day' => 10, 'payment_day' => 25, 'annual_bps' => 0]]);
+        $bank = app(AuthService::class)->issueService('banca');
+        $buy = fn (string $amount, string $merchant) => $this->postJson('/api/v1/tarjetas/'.$card->id.'/autorizaciones', ['dpi' => '3068226670601', 'monto' => $amount, 'comercio' => $merchant], $this->headers($bank));
+
+        $buy('5000.00', 'Agencias Way')->assertCreated()->assertJsonPath('data.disponible_centavos', 500000);
+        $buy('10000.00', 'Fernando')->assertUnprocessable()->assertJsonPath('code', 'LIMITE_EXCEDIDO');
+        $buy('1000.00', 'Campero')->assertCreated();
+        $buy('3000.00', 'TacoBell')->assertCreated()->assertJsonPath('data.disponible_centavos', 100000);
+        $buy('1000.01', 'Excede por un centavo')->assertUnprocessable()->assertJsonPath('code', 'LIMITE_EXCEDIDO');
+        $buy('1000.00', 'Usa el último crédito')->assertCreated()->assertJsonPath('data.disponible_centavos', 0);
+        $buy('0.01', 'Sin crédito')->assertUnprocessable()->assertJsonPath('code', 'LIMITE_EXCEDIDO');
+        // The older staff endpoint is held to the same hard stop.
+        $this->postJson('/api/v1/tarjetas/'.$card->id.'/consumos', ['monto' => '0.01', 'concepto' => 'Consumo directo'], $this->headers())->assertUnprocessable()->assertJsonPath('code', 'LIMITE_EXCEDIDO');
+        self::assertSame(1000000, $card->refresh()->principal_centavos, 'The debt never goes past the limit.');
+
+        // Banca Virtual pays with the account number (the same in both systems): that frees credit.
+        $this->postJson('/api/v1/tarjetas/'.$card->id.'/pagos', ['dpi' => '3068226670601', 'monto' => '500.00', 'origen_numero' => '5356242050'], $this->headers($bank))->assertCreated();
+        self::assertSame([950000, 150000], [$card->refresh()->principal_centavos, $account->refresh()->saldo_centavos]);
+        $buy('500.01', 'Más que lo liberado')->assertUnprocessable()->assertJsonPath('code', 'LIMITE_EXCEDIDO');
+        $buy('500.00', 'Lo liberado')->assertCreated()->assertJsonPath('data.disponible_centavos', 0);
+        $this->postJson('/api/v1/tarjetas/'.$card->id.'/pagos', ['dpi' => '3068226670601', 'monto' => '1.00', 'origen_numero' => '9999999999'], $this->headers($bank))->assertNotFound();
+        self::assertSame(['aprobada' => 5, 'rechazada' => 4], CardPurchase::where('tarjeta_id', (string) $card->id)->get()->countBy('estado')->sortKeys()->all());
     }
 }

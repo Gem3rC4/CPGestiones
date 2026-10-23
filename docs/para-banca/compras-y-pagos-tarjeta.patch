@@ -1,0 +1,69 @@
+diff --git a/backend/banca-virtual-api/src/tarjetas/tarjetas.service.ts b/backend/banca-virtual-api/src/tarjetas/tarjetas.service.ts
+index 0fb7838..b335ee4 100644
+--- a/backend/banca-virtual-api/src/tarjetas/tarjetas.service.ts
++++ b/backend/banca-virtual-api/src/tarjetas/tarjetas.service.ts
+@@ -213,8 +213,17 @@ export class TarjetasService {
+   }
+ 
+   /** Paga la tarjeta con dinero de una cuenta del cliente. */
++  /** Id de la tarjeta en CP Gestiones (las tarjetas emitidas por el banco). Null si es solo local. */
++  private async cpTarjetaId(clienteId: string, id: string): Promise<string | null> {
++    const r = await this.db
++      .one<{ cpId: string | null }>('SELECT cp_tarjeta_id AS "cpId" FROM tarjetas WHERE id = $1 AND cliente_id = $2', [id, clienteId])
++      .catch(() => null);
++    return r?.cpId ?? null;
++  }
++
+   async pagar(clienteId: string, id: string, cuentaId: string, monto: number) {
+     const montoCents = toCents(monto);
++    const cpId = await this.cpTarjetaId(clienteId, id);
+     const r = await this.db.transaction(async (tx) => {
+       const t = await this.db.one<Tarjeta>(
+         `SELECT ${TARJETA_COLS} FROM tarjetas WHERE id = $1 AND cliente_id = $2 FOR UPDATE`,
+@@ -233,6 +242,12 @@ export class TarjetasService {
+       const saldo = toCents(cuenta.saldo);
+       if (saldo < montoCents) throw new UnprocessableEntityException('Fondos insuficientes en la cuenta');
+ 
++      // Tarjeta del banco: el pago se aplica en CP Gestiones (descuenta la deuda y libera crédito) con la misma cuenta,
++      // identificada por su número (es el mismo en ambos sistemas). Si CP lo rechaza, aquí no se mueve nada.
++      if (cpId) {
++        const cliente = await this.clientes.obtener(clienteId);
++        await this.cp.post(`/tarjetas/${encodeURIComponent(cpId)}/pagos`, { dpi: cliente.dpi, monto: monto.toFixed(2), origen_numero: cuenta.numero });
++      }
+       const nuevoSaldo = fromCents(saldo - montoCents);
+       const referencia = 'TDC-' + randomBytes(6).toString('hex').toUpperCase();
+       await tx.query('UPDATE cuentas SET saldo = $1 WHERE id = $2', [nuevoSaldo, cuenta.id]);
+@@ -255,11 +270,33 @@ export class TarjetasService {
+       `Se aplicaron Q${monto.toFixed(2)} a tu tarjeta terminada en ${r.ultimos4}. Ref. ${r.referencia}.`,
+       '/tarjetas',
+     );
++    if (cpId) this.ultimaSync.delete(clienteId);
+     return { ...r, monto };
+   }
+ 
+   /** Solo demostración: simula una compra con la tarjeta para poder probar el pago. */
+   async consumoDemo(clienteId: string, id: string, monto: number, comercio?: string) {
++    // Tarjeta emitida por el banco: la compra la AUTORIZA CP Gestiones, que valida el límite en tiempo real y registra
++    // el intento (aprobado o rechazado). Si la rechaza (LIMITE_EXCEDIDO, TARJETA_BLOQUEADA…), el error llega tal cual
++    // al cliente y aquí no se registra nada. Así el límite no puede rebasarse aunque la copia local esté desactualizada.
++    const cpId = await this.cpTarjetaId(clienteId, id);
++    if (cpId) {
++      const cliente = await this.clientes.obtener(clienteId);
++      await this.cp.post(`/tarjetas/${encodeURIComponent(cpId)}/autorizaciones`, {
++        dpi: cliente.dpi,
++        monto: monto.toFixed(2),
++        comercio: comercio?.trim() || 'Comercio',
++        concepto: 'Compra en Banca Virtual',
++      });
++      await this.db.query(`INSERT INTO tarjeta_movimientos (tarjeta_id, tipo, monto, descripcion) VALUES ($1, 'CONSUMO', $2, $3)`, [
++        id,
++        fromCents(toCents(monto)),
++        `Compra: ${comercio?.trim() || 'Comercio'}`,
++      ]);
++      // El saldo usado y el disponible se toman de CP (la fuente de verdad) en la siguiente sincronización
++      this.ultimaSync.delete(clienteId);
++      return this.detalle(clienteId, id);
++    }
+     if (this.config.get('ALLOW_DEMO_DEPOSITS') !== 'true') {
+       throw new ForbiddenException('Las compras de demostración están deshabilitadas');
+     }

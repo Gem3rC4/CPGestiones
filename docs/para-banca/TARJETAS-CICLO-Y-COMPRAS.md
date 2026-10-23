@@ -48,7 +48,4 @@ Dos APIs nuevas de CP Gestiones para las tarjetas que emite el banco. Usan el mi
 
 ## Parche para su app
 
-[`tarjetas-ciclo-y-compras.patch`](tarjetas-ciclo-y-compras.patch), sobre su último commit. Antes de aplicarlo, ejecuten `database/08_ciclo_tarjetas.sql`.
-
-- **«Mis tarjetas»:** muestra el próximo corte, la fecha límite de pago, el pago mínimo y el total a pagar. Se guardan al sincronizar con `GET /tarjetas`.
-- **Compras:** su endpoint de compra (`POST /tarjetas/:id/consumo-demo`) pasa por la autorización de Gestiones cuando la tarjeta es del banco. El rechazo llega al cliente con el motivo.
+Ya muestran las fechas de corte y pago por su cuenta. Lo que falta es que las compras y los pagos pasen por CP Gestiones: ver [COMPRAS-Y-PAGOS-TARJETA.md](COMPRAS-Y-PAGOS-TARJETA.md) y su parche [`compras-y-pagos-tarjeta.patch`](compras-y-pagos-tarjeta.patch).

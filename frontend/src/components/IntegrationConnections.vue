@@ -4,7 +4,7 @@ import { Link2, PlugZap, Save } from 'lucide-vue-next'
 import { api, get, message, date } from '../services/api'
 const help = {
   banca: { url: 'URL del servidor de Banca Virtual que recibirá los avisos (webhook), por ejemplo https://banca-virtual-five.vercel.app/api/gestiones/webhook', secret: 'Secreto compartido para firmar los avisos (HMAC). Tu compañero usa el mismo valor para verificarlos.' },
-  banca_abonos: { url: 'Ruta de BancaVirtual que acredita los pagos en sus cuentas (planillas, préstamos y fondeos). Ya viene puesta: https://bancavirtual-kp9z.onrender.com/api/v1/admin/abonos', secret: 'Llave de servicio (X-Service-Key) que te dio tu compañero. Se guarda cifrada y nunca se vuelve a mostrar. "Probar" no acredita dinero.' },
+  banca_abonos: { url: 'Ruta de BancaVirtual que acredita los pagos en sus cuentas (planillas, préstamos y depósitos). Ya viene puesta: https://bancavirtual-kp9z.onrender.com/api/v1/admin/abonos', secret: 'Llave de servicio (X-Service-Key) que te dio tu compañero. Se guarda cifrada y nunca se vuelve a mostrar. "Probar" no acredita dinero.' },
   riesgos: { url: 'URL de CP Analítica que recibirá las solicitudes de evaluación (opcional en el flujo actual).', secret: 'Token que entregó CP Analítica para aceptar las llamadas.' },
 }
 const connections = ref([]), forms = reactive({}), busy = ref(''), error = ref(''), results = reactive({})

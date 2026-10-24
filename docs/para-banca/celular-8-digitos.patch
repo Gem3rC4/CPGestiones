@@ -1,0 +1,99 @@
+diff --git a/backend/banca-virtual-api/src/auth/auth.schema.ts b/backend/banca-virtual-api/src/auth/auth.schema.ts
+index 2efa3e5..5f94099 100644
+--- a/backend/banca-virtual-api/src/auth/auth.schema.ts
++++ b/backend/banca-virtual-api/src/auth/auth.schema.ts
+@@ -55,7 +55,7 @@ export class RegisterDto {
+ 
+   /** Celular (8 dígitos): permite recibir transferencias por número de teléfono */
+   @IsOptional()
+-  @Matches(/^[2-7]\d{7}$/, { message: 'El celular debe tener 8 dígitos' })
++  @Matches(/^\d{8}$/, { message: 'El celular debe tener 8 dígitos' })
+   celular?: string;
+ 
+   @IsOptional()
+diff --git a/backend/banca-virtual-api/src/beneficiarios/beneficiarios.schema.ts b/backend/banca-virtual-api/src/beneficiarios/beneficiarios.schema.ts
+index 7d43db8..2c104d2 100644
+--- a/backend/banca-virtual-api/src/beneficiarios/beneficiarios.schema.ts
++++ b/backend/banca-virtual-api/src/beneficiarios/beneficiarios.schema.ts
+@@ -29,6 +29,6 @@ export class CrearBeneficiarioDto {
+ 
+   /** Alternativa al número de cuenta: el celular (8 dígitos) del destinatario */
+   @IsOptional()
+-  @Matches(/^[2-7]\d{7}$/, { message: 'El celular debe tener 8 dígitos' })
++  @Matches(/^\d{8}$/, { message: 'El celular debe tener 8 dígitos' })
+   telefono?: string;
+ }
+diff --git a/backend/banca-virtual-api/src/clientes/clientes.schema.ts b/backend/banca-virtual-api/src/clientes/clientes.schema.ts
+index f79d721..dc83a46 100644
+--- a/backend/banca-virtual-api/src/clientes/clientes.schema.ts
++++ b/backend/banca-virtual-api/src/clientes/clientes.schema.ts
+@@ -66,7 +66,7 @@ export class UpdatePerfilDto {
+ /** Celular (8 dígitos, Guatemala) y cuenta que recibe las transferencias hechas a ese número. telefono = null lo quita. */
+ export class CelularDto {
+   @ValidateIf((o) => o.telefono !== null)
+-  @Matches(/^[2-7]\d{7}$/, { message: 'El celular debe tener 8 dígitos' })
++  @Matches(/^\d{8}$/, { message: 'El celular debe tener 8 dígitos' })
+   telefono: string | null;
+ 
+   /** Opcional: si no se indica, recibe la cuenta activa más antigua */
+diff --git a/backend/banca-virtual-api/src/transferencias/transferencias.schema.ts b/backend/banca-virtual-api/src/transferencias/transferencias.schema.ts
+index f5375f5..74e1998 100644
+--- a/backend/banca-virtual-api/src/transferencias/transferencias.schema.ts
++++ b/backend/banca-virtual-api/src/transferencias/transferencias.schema.ts
+@@ -25,7 +25,7 @@ export class CrearTransferenciaCelularDto {
+   cuentaOrigenId: string;
+ 
+   @IsString()
+-  @Matches(/^[2-7]\d{7}$/, { message: 'El celular debe tener 8 dígitos' })
++  @Matches(/^\d{8}$/, { message: 'El celular debe tener 8 dígitos' })
+   telefono: string;
+ 
+   @IsNumber({ maxDecimalPlaces: 2 })
+diff --git a/frontend/banca-virtual-web/src/app/(banca)/perfil/page.tsx b/frontend/banca-virtual-web/src/app/(banca)/perfil/page.tsx
+index 4cb829a..87e5182 100644
+--- a/frontend/banca-virtual-web/src/app/(banca)/perfil/page.tsx
++++ b/frontend/banca-virtual-web/src/app/(banca)/perfil/page.tsx
+@@ -126,7 +126,7 @@ export default function PerfilPage() {
+             </div>
+           )}
+           <div className="flex flex-wrap gap-2">
+-            <Button type="button" loading={celGuardando} disabled={!/^[2-7]\d{7}$/.test(celular)} onClick={() => guardarCelular(celular)}>
++            <Button type="button" loading={celGuardando} disabled={!/^\d{8}$/.test(celular)} onClick={() => guardarCelular(celular)}>
+               Guardar celular
+             </Button>
+             {celGuardado && (
+diff --git a/frontend/banca-virtual-web/src/app/(banca)/transferencias/page.tsx b/frontend/banca-virtual-web/src/app/(banca)/transferencias/page.tsx
+index 3714524..e49100a 100644
+--- a/frontend/banca-virtual-web/src/app/(banca)/transferencias/page.tsx
++++ b/frontend/banca-virtual-web/src/app/(banca)/transferencias/page.tsx
+@@ -178,7 +178,7 @@ function NuevaTransferencia({
+   useEffect(() => {
+     setCelDestino(null);
+     setErrorCel('');
+-    if (modo !== 'celular' || !/^[2-7]\d{7}$/.test(celular)) return;
++    if (modo !== 'celular' || !/^\d{8}$/.test(celular)) return;
+     let vigente = true;
+     setBuscandoCel(true);
+     cuentasService
+@@ -659,7 +659,7 @@ function PanelBeneficiarios({ beneficiarios, onCambio, onError }: { beneficiario
+   useEffect(() => {
+     setTitular(null);
+     setErrorCel('');
+-    if (!/^[2-7]\d{7}$/.test(celular)) return;
++    if (!/^\d{8}$/.test(celular)) return;
+     let vigente = true;
+     setBuscando(true);
+     cuentasService
+diff --git a/frontend/banca-virtual-web/src/app/registro/page.tsx b/frontend/banca-virtual-web/src/app/registro/page.tsx
+index 05d1d15..bb86291 100644
+--- a/frontend/banca-virtual-web/src/app/registro/page.tsx
++++ b/frontend/banca-virtual-web/src/app/registro/page.tsx
+@@ -28,7 +28,7 @@ export default function RegistroPage() {
+ 
+   const dpiOk = /^\d{13}$/.test(f.dpi);
+   const passOk = f.password.length >= 8;
+-  const celOk = /^[2-7]\d{7}$/.test(f.celular);
++  const celOk = /^\d{8}$/.test(f.celular);
+ 
+   async function onSubmit(e: FormEvent) {
+     e.preventDefault();

@@ -107,8 +107,9 @@ class AdminController extends ApiController
     }
 
     /**
-     * Corrects or updates the customer file (income, phone, a typo…). DPI and e-mail stay unique; once the
-     * customer uses Banca Virtual they are their sign-in data there, so they can no longer be changed here.
+     * Corrects or updates the customer file (income, phone, e-mail, a typo…). DPI and e-mail stay unique. The
+     * e-mail can change even for Banca Virtual users (they sign in with the new one); the DPI cannot, because it
+     * is what links them to Banca Virtual.
      */
     public function updateCustomer(OperationRequest $r, string $id)
     {
@@ -118,9 +119,7 @@ class AdminController extends ApiController
             if (isset($d['email'])) {
                 $email = mb_strtolower(trim($d['email']));
                 if ($email !== mb_strtolower((string) $customer->email)) {
-                    if ($customer->password) {
-                        throw new BusinessException('El cliente ya inicia sesión en Banca Virtual con su correo; no se puede cambiar desde aquí.', 'APP_IDENTITY_LOCKED', 409);
-                    }
+                    // Allowed even for Banca Virtual users: from now on they sign in there with the new e-mail.
                     if (Customer::where('email', $email)->where('_id', '!=', $customer->id)->exists()) {
                         throw new BusinessException('Ya existe otro cliente con ese correo electrónico.', 'CUSTOMER_EXISTS', 409);
                     }

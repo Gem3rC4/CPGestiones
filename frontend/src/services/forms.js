@@ -67,9 +67,10 @@ export function formSpec(kind, item, lookups) {
    description:'La cuenta concentradora vuelve a sus fondos iniciales y las demás cuentas internas a Q0.00. Escribe ELIMINAR TODO para confirmar.',
    fields:[text('confirmacion','Confirmación',{placeholder:'ELIMINAR TODO',pattern:'ELIMINAR TODO',full:true})]}
   case 'editar-cliente': { const adult=new Date(); adult.setFullYear(adult.getFullYear()-18); const app=Boolean(item.acceso_app); return {title:`Editar a ${item.nombre}`,path:`/clientes/${id}`,method:'PATCH',submitLabel:'Guardar cambios',
-   description:app ? 'Corrige o actualiza los datos del cliente. El DPI y el correo no se pueden cambiar porque el cliente ya los usa para entrar a Banca Virtual.' : 'Corrige o actualiza los datos del cliente. Solo se guardan los campos que cambies.',
+   description:app ? 'Corrige o actualiza los datos del cliente. El DPI no se puede cambiar porque enlaza al cliente con Banca Virtual.' : 'Corrige o actualiza los datos del cliente. Solo se guardan los campos que cambies.',
    fields:[text('nombres','Nombre',{maxLength:75,value:item.nombres || ''}),text('apellidos','Apellido',{maxLength:74,value:item.apellidos || ''}),
-    ...(app ? [] : [text('email','Correo electrónico',{type:'email',value:item.email || ''}),text('dpi','DPI',{pattern:'[0-9]{13}',maxLength:13,inputmode:'numeric',optional:true,placeholder:item.dpi_enmascarado || '13 dígitos',help:'Déjalo vacío para conservar el actual. Escríbelo completo solo si quieres corregirlo.'})]),
+    text('email','Correo electrónico',{type:'email',full:true,value:item.email || '',help:app ? 'Si lo cambias, el cliente entrará a Banca Virtual con el correo nuevo.' : undefined}),
+    ...(app ? [] : [text('dpi','DPI',{pattern:'[0-9]{13}',maxLength:13,inputmode:'numeric',optional:true,placeholder:item.dpi_enmascarado || '13 dígitos',help:'Déjalo vacío para conservar el actual. Escríbelo completo solo si quieres corregirlo.'})]),
     text('nit','NIT',{maxLength:20,value:item.nit || ''}),text('telefono','Teléfono',{type:'tel',maxLength:20,value:item.telefono || ''}),
     text('fecha_nacimiento','Fecha de nacimiento',{type:'date',max:adult.toISOString().slice(0,10),value:item.fecha_nacimiento || ''}),
     amount('ingreso_mensual','Ingreso mensual (Q)',{value:item.ingreso_centavos == null ? '' : (item.ingreso_centavos/100).toFixed(2)}),

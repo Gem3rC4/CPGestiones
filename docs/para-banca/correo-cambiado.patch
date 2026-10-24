@@ -1,0 +1,22 @@
+diff --git a/backend/banca-virtual-api/src/auth/auth.service.ts b/backend/banca-virtual-api/src/auth/auth.service.ts
+index 575db3a..60f3e58 100644
+--- a/backend/banca-virtual-api/src/auth/auth.service.ts
++++ b/backend/banca-virtual-api/src/auth/auth.service.ts
+@@ -162,7 +162,16 @@ export class AuthService implements OnModuleInit {
+     email: string,
+     d: { nombre: string; apellido: string; dpi?: string; fechaNacimiento?: string; nit?: string; ingresos?: number; tipoEmpleo?: string; antiguedad?: number },
+   ): Promise<Cliente> {
+-    const existente = await this.clientes.buscarPorEmail(email);
++    let existente = await this.clientes.buscarPorEmail(email);
++    // El banco cambió el correo del cliente en CP Gestiones: su ficha se reconoce por el DPI (que no cambia) y se le
++    // pone el correo nuevo, para que conserve sus cuentas, movimientos y tarjetas en lugar de crear otra ficha.
++    if (!existente && d.dpi) {
++      const porDpi = await this.db.one<{ id: string }>(`SELECT id FROM clientes WHERE dpi_hash = $1 AND rol = 'CLIENTE'`, [blindIndex(d.dpi)]);
++      if (porDpi) {
++        await this.db.query('UPDATE clientes SET email = $2, updated_at = now() WHERE id = $1', [porDpi.id, email]);
++        existente = await this.clientes.buscarPorEmail(email);
++      }
++    }
+     if (existente) {
+       await this.db.query(`UPDATE clientes SET password_hash = $2, updated_at = now() WHERE id = $1 AND password_hash <> $2`, [existente.id, SIN_PASSWORD_LOCAL]);
+       if (d.dpi && !existente.dpi) {

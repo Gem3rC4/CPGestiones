@@ -1365,7 +1365,10 @@ final class OperationsTest extends TestCase
 
         // Once the customer uses Banca Virtual, DPI and e-mail are their sign-in data there.
         Customer::findOrFail($client['id'])->update(['password' => Hash::make('clave2026')]);
-        $this->patchJson($url, ['email' => 'nuevo@example.test'], $this->headers())->assertConflict()->assertJsonPath('code', 'APP_IDENTITY_LOCKED');
+        // The e-mail can change (they sign in with the new one); the DPI cannot.
+        $this->patchJson($url, ['email' => 'Nuevo@Example.test'], $this->headers())->assertOk()->assertJsonPath('data.email', 'nuevo@example.test');
+        $this->postJson('/api/v1/banca/auth/login', ['correo_electronico' => 'nuevo@example.test', 'contrasena' => 'clave2026'], $this->headers(app(AuthService::class)->issueService('banca')))->assertOk()
+            ->assertJsonPath('data.cliente.dpi', '3000000002324');
         $this->patchJson($url, ['dpi' => '3000000002325'], $this->headers())->assertConflict()->assertJsonPath('code', 'APP_IDENTITY_LOCKED');
         $this->patchJson($url, ['ingreso_mensual' => '8000.00'], $this->headers())->assertOk()->assertJsonPath('data.ingreso_centavos', 800000);
         $this->patchJson($url, ['telefono' => '55555555'], $this->headers($this->token($this->user('operador', 'ops-edit'))))->assertForbidden();

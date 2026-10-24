@@ -1373,4 +1373,37 @@ final class OperationsTest extends TestCase
         $this->patchJson($url, ['ingreso_mensual' => '8000.00'], $this->headers())->assertOk()->assertJsonPath('data.ingreso_centavos', 800000);
         $this->patchJson($url, ['telefono' => '55555555'], $this->headers($this->token($this->user('operador', 'ops-edit'))))->assertForbidden();
     }
+
+    public function test_salary_assigned_at_a_company_becomes_the_customer_monthly_income(): void
+    {
+        app(InstallService::class)->fundMasterAccount();
+        $sharon = $this->postJson('/api/v1/clientes', ['nombres' => 'Sharon', 'apellidos' => 'Morales', 'email' => 'smorales@example.test', 'dpi' => '3000000006464', 'nit' => '88894445', 'telefono' => '52140380', 'fecha_nacimiento' => '1999-01-01', 'ingreso_mensual' => '3000.00', 'antiguedad_laboral_meses' => 12], $this->headers())->assertCreated()->json('data');
+        $account = $this->postJson('/api/v1/cuentas', ['cliente_id' => $sharon['id'], 'producto' => 'monetaria', 'monto_apertura' => '100.00'], $this->headers())->assertCreated()->json('data');
+        $first = $this->postJson('/api/v1/empresas', ['nombre' => 'Restaurante El buen sabor', 'nit' => '1234560-1'], $this->headers())->assertCreated()->json('data');
+        $second = $this->postJson('/api/v1/empresas', ['nombre' => 'Cafetería Dos', 'nit' => '1234560-2'], $this->headers())->assertCreated()->json('data');
+        $this->postJson('/api/v1/colaboradores', ['empresa_id' => $first['id'], 'cliente_id' => $sharon['id'], 'cuenta_id' => $account['id'], 'puesto' => 'Mesera', 'salario' => '4900.00'], $this->headers())->assertCreated();
+        self::assertSame(490000, Customer::findOrFail($sharon['id'])->ingreso_centavos, 'The salary becomes the monthly income of the profile.');
+        $this->postJson('/api/v1/colaboradores', ['empresa_id' => $second['id'], 'cliente_id' => $sharon['id'], 'cuenta_id' => $account['id'], 'puesto' => 'Cajera', 'salario' => '1500.50'], $this->headers())->assertCreated();
+        self::assertSame(640050, Customer::findOrFail($sharon['id'])->ingreso_centavos, 'Two jobs: the income is the sum of both salaries.');
+        $this->getJson('/api/v1/clientes/'.$sharon['id'].'/acceso', $this->headers())->assertOk();
+    }
+
+    public function test_old_account_closings_are_corrected_once_and_shown_as_outflows(): void
+    {
+        app(InstallService::class)->fundMasterAccount();
+        $master = Account::where('system_key', 'concentradora')->firstOrFail();
+        $before = (int) $master->saldo_centavos;
+        // A closing recorded under the old rule: the balance (Q100) came back to the vault.
+        $customer = $this->customer('old-close');
+        $account = $this->account($customer, 10000);
+        app(IdempotencyService::class)->run((string) $this->admin->id, 'old-closing-01', 'old', [], fn () => app(AccountService::class)->move((string) $account->id, (string) $master->id, 10000, 'sistema:prueba', 'Cierre de cuenta por eliminación', 'cierre_cuenta'));
+        self::assertSame($before + 10000, $master->refresh()->saldo_centavos);
+        $total = (int) Account::sum('saldo_centavos');
+        self::assertSame(['corregidos' => 1, 'monto_centavos' => 10000], app(InstallService::class)->correctOldAccountClosings());
+        self::assertSame(['corregidos' => 0, 'monto_centavos' => 0], app(InstallService::class)->correctOldAccountClosings(), 'Only once.');
+        self::assertSame($before - 10000, $master->refresh()->saldo_centavos, 'The closing now subtracts the balance from the vault.');
+        self::assertSame($total, (int) Account::sum('saldo_centavos'), 'The correction is double entry: the ledger total does not change.');
+        $row = collect($this->getJson('/api/v1/dashboard', $this->headers())->json('data.concentradora.por_tipo'))->firstWhere('tipo', 'cierre_cuenta');
+        self::assertSame(-10000, $row['entradas_centavos'] - $row['salidas_centavos'], 'Shown as −Q100.00.');
+    }
 }

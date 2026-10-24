@@ -30,6 +30,7 @@ Artisan::command('cp:install', function (InstallService $service) {
         'Migración de roles' => fn () => $service->migrateRoles(),
         'Administrador protegido' => fn () => $service->protectOriginalAdministrator(),
         'Cuentas de empresas' => fn () => $service->migrateCompanyAccounts(),
+        'Corrección de cierres de cuenta anteriores' => fn () => $service->correctOldAccountClosings(),
         'Registros residuales de clientes eliminados' => fn () => app(MaintenanceService::class)->purgeOrphans(),
     ];
     foreach ($steps as $name => $step) {

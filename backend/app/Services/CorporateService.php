@@ -42,7 +42,21 @@ class CorporateService
         $collaborator = Collaborator::create(['empresa_id' => (string) $company->id, 'empresa_nombre' => $company->nombre, 'cliente_id' => (string) $customer->id, 'nombre' => $customer->nombre, 'correo' => $customer->email,
             'puesto' => $data['puesto'], 'salario_centavos' => Money::cents($data['salario']), 'cuenta_id' => (string) $account->id, 'cuenta_numero' => $account->numero, 'cuenta_tipo' => $account->tipo, 'activo' => true]);
         app(SecurityService::class)->record('colaborador_registrado', $actor, ['empresa_id' => (string) $company->id, 'colaborador_id' => (string) $collaborator->id]);
+        $this->syncIncome($customer, $actor);
 
         return $collaborator->toArray();
+    }
+
+    /**
+     * The customer's monthly income in their main profile follows their salaries: the sum of what every company
+     * they work for pays them (just the salary when it is one company), so credit evaluations use current data.
+     */
+    public function syncIncome(Customer $customer, string $actor): void
+    {
+        $income = (int) Collaborator::where('cliente_id', (string) $customer->id)->where('activo', true)->sum('salario_centavos');
+        if ($income > 0 && (int) $customer->ingreso_centavos !== $income) {
+            $customer->update(['ingreso_centavos' => $income, 'perfil_version' => (int) ($customer->perfil_version ?? 0) + 1]);
+            app(SecurityService::class)->record('ingreso_actualizado_por_salario', $actor, ['cliente_id' => (string) $customer->id, 'ingreso_centavos' => $income]);
+        }
     }
 }

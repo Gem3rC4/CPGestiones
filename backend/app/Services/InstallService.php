@@ -138,6 +138,40 @@ class InstallService
     }
 
     /**
+     * Account closings recorded before the current rule returned the customer's balance to the master account
+     * (+X). The rule is that the customer takes the money, so it leaves the vault (-X). Each such closing is
+     * corrected once with a movement of 2X from the master account to "efectivo": the vault ends where it would
+     * have been and the closing shows as an outflow. Idempotent (the original movement is marked).
+     *
+     * @return array{corregidos: int, monto_centavos: int}
+     */
+    public function correctOldAccountClosings(): array
+    {
+        $master = Account::where('system_key', 'concentradora')->first();
+        if (! $master) {
+            return ['corregidos' => 0, 'monto_centavos' => 0];
+        }
+        $done = ['corregidos' => 0, 'monto_centavos' => 0];
+        $old = Movement::where('cuenta_id', (string) $master->id)->where('tipo', 'cierre_cuenta')->where('importe_centavos', '>', 0)->where('corregido', '!=', true)->get();
+        foreach ($old as $movement) {
+            DB::connection('mongodb')->transaction(function () use ($movement, $master, &$done): void {
+                $fresh = Movement::findOrFail($movement->id);
+                if ($fresh->corregido === true) {
+                    return;
+                }
+                $amount = (int) $fresh->importe_centavos;
+                $accounts = app(AccountService::class);
+                $accounts->move((string) $master->id, (string) $accounts->cashOutAccount()->id, 2 * $amount, 'sistema:correccion', 'Corrección: el saldo de un cierre de cuenta sale de la concentradora ('.Money::format($amount).')', 'cierre_cuenta');
+                $fresh->update(['corregido' => true]);
+                $done['corregidos']++;
+                $done['monto_centavos'] += $amount;
+            }, attempts: 5);
+        }
+
+        return $done;
+    }
+
+    /**
      * Before v3 a company paid payroll from an account of a customer created only to hold it. That account
      * now belongs to the company, and such a holder (no app access, no personal accounts) leaves the
      * personal directory. Idempotent.

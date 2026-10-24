@@ -15,7 +15,7 @@ async function login() {
 <template>
   <main class="login-page">
     <section class="login-story">
-      <a class="brand" href="#"><span class="brand-symbol">CP<span>✓</span></span><span>CP GESTIONES<small>PORTAL DE OPERACIONES</small></span></a>
+      <a class="brand" href="#"><img class="brand-logo" src="/logo-cp.png" alt="CP Gestiones" width="40" height="40"><span>CP GESTIONES<small>PORTAL DE OPERACIONES</small></span></a>
       <div class="story-content"><p class="eyebrow"><span class="live-dot"></span> EL CENTRO DE TU OPERACIÓN</p><h1>Cada gestión. <br>Cada decisión. <br><em>Todo conectado.</em></h1><p>Un espacio para administrar cuentas, coordinar aprobaciones y dar seguimiento a cada solicitud del banco.</p>
       <div class="ecosystem"><div><Layers3 :size="20"/><span>CP Banca Virtual<small>Solicitudes de clientes</small></span></div><span class="connection-line"></span><div class="ecosystem-core"><ShieldCheck :size="20"/><span>CP Gestiones<small>Control y seguimiento</small></span></div><span class="connection-line"></span><div><Check :size="20"/><span>CP Analítica<small>Evaluación de riesgos</small></span></div></div></div>
       <footer>CreditPulse <span>·</span> Ecosistema bancario universitario</footer>

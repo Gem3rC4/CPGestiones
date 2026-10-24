@@ -1,7 +1,17 @@
 import { money, label } from './api'
 // The PDF libraries load only when a report is generated, so they do not slow down the panel.
+let logo = null
+// The bank's logo for the header of every PDF (loaded once; the PDF still works without it).
+async function loadLogo() {
+  if (logo !== null) return logo
+  try {
+    const blob = await (await fetch('/logo-cp.png')).blob()
+    logo = await new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = reject; r.readAsDataURL(blob) })
+  } catch { logo = '' }
+  return logo
+}
 async function libraries() {
-  const [{ jsPDF }, { autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')])
+  const [{ jsPDF }, { autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable'), loadLogo()])
   return { jsPDF, autoTable }
 }
 const fileName = text => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').toLowerCase()
@@ -13,8 +23,10 @@ const BLUE = [37, 99, 235], INK = [15, 23, 42], MUTED = [100, 116, 139]
 function header(doc, report, subtitle, lines) {
   const width = doc.internal.pageSize.getWidth()
   doc.setFillColor(...BLUE); doc.rect(0, 0, width, 64, 'F')
-  doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.text('CreditPulse · CP Gestiones', 40, 30)
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.text('Portal de operaciones · Información centralizada', 40, 46)
+  let textX = 40
+  if (logo) { try { doc.addImage(logo, 'PNG', 40, 10, 44, 44); textX = 86 } catch { /* without the logo */ } }
+  doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.text('CreditPulse · CP Gestiones', textX, 30)
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.text('Portal de operaciones · Información centralizada', textX, 46)
   doc.setFontSize(9); doc.text(`Generado: ${when(report.generado_el)}${report.generado_por ? ` · ${report.generado_por}` : ''}`, width - 40, 30, { align: 'right' })
   doc.setTextColor(...INK); doc.setFont('helvetica', 'bold'); doc.setFontSize(17); doc.text(report.reporte, 40, 96)
   doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...MUTED)

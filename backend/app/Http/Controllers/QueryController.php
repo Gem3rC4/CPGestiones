@@ -216,6 +216,9 @@ class QueryController extends ApiController
                 'clientes' => Customer::where('segmento', '!=', 'empresa')->count(),
                 'clientes_con_app' => Customer::whereNotNull('password')->count(),
                 'sesiones_app_activas' => CustomerSession::where('expires_at', '>', now())->count(),
+                // People who can enter Banca Virtual (password set and access not blocked) and who signed in recently.
+                'personas_con_acceso' => Customer::whereNotNull('password')->where('active', '!=', false)->count(),
+                'ingresaron_24h' => Customer::whereNotNull('password')->where('ultimo_acceso', '>=', now()->subDay()->toIso8601String())->count(),
                 'cuentas_ahorro' => $customerAccounts()->where('tipo', 'ahorro')->count(),
                 'cuentas_monetarias' => $customerAccounts()->where('tipo', 'monetaria')->count(),
                 'cuentas_bloqueadas' => $customerAccounts()->where('estado', 'bloqueada')->count(),

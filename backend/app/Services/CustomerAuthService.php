@@ -28,7 +28,7 @@ class CustomerAuthService
 
                 return null;
             }
-            $changes = ['failed_attempts' => 0, 'locked_until' => null];
+            $changes = ['failed_attempts' => 0, 'locked_until' => null, 'ultimo_acceso' => now()->toIso8601String()];
             if (Hash::needsRehash($customer->password)) {
                 $changes['password'] = Hash::make($data['contrasena']);
             }

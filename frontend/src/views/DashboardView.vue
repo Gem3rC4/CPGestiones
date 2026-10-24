@@ -17,7 +17,7 @@ const summary = computed(() => { const c = collection.value; if (!c) return ''; 
 // Registry tiles: totals Gestiones administers as the core of the three systems.
 const registry = computed(() => { const g = props.data?.global; if (!g) return []; return [
   { key:'clientes', icon:Users, tone:'blue', title:'Clientes', value:g.clientes, detail:`${g.clientes_con_app} con acceso a Banca Virtual` },
-  { key:'clientes', icon:Smartphone, tone:'teal', title:'Sesiones activas en la app', value:g.sesiones_app_activas, detail:'Credenciales administradas en Gestiones' },
+  { key:'clientes', icon:Smartphone, tone:'teal', title:'Personas con acceso a la banca', value:g.personas_con_acceso ?? g.clientes_con_app, detail:`${g.ingresaron_24h ?? 0} ingresaron en las últimas 24 horas` },
   { key:'cuentas', icon:Wallet, tone:'teal', title:'Cuentas', value:g.cuentas_ahorro + g.cuentas_monetarias, detail:`${g.cuentas_ahorro} de ahorro · ${g.cuentas_monetarias} monetarias${g.cuentas_bloqueadas ? ` · ${g.cuentas_bloqueadas} bloqueadas` : ''}` },
   { key:'cuentas', icon:Landmark, tone:'blue', title:'Saldos de clientes', value:money(g.saldo_ahorro_centavos + g.saldo_monetario_centavos), detail:`Ahorro ${money(g.saldo_ahorro_centavos)} · Monetario ${money(g.saldo_monetario_centavos)}` },
   { key:'creditos', icon:HandCoins, tone:'amber', title:'Cartera de préstamos', value:money(g.cartera_prestamos_centavos), detail:`${g.prestamos_vigentes} vigentes${g.cuotas_vencidas ? ` · ${g.cuotas_vencidas} cuota(s) vencida(s)` : ' · al día'}` },

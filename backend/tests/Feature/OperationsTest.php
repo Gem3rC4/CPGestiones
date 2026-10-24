@@ -1383,9 +1383,12 @@ final class OperationsTest extends TestCase
         $second = $this->postJson('/api/v1/empresas', ['nombre' => 'Cafetería Dos', 'nit' => '1234560-2'], $this->headers())->assertCreated()->json('data');
         $this->postJson('/api/v1/colaboradores', ['empresa_id' => $first['id'], 'cliente_id' => $sharon['id'], 'cuenta_id' => $account['id'], 'puesto' => 'Mesera', 'salario' => '4900.00'], $this->headers())->assertCreated();
         self::assertSame(490000, Customer::findOrFail($sharon['id'])->ingreso_centavos, 'The salary becomes the monthly income of the profile.');
-        $this->postJson('/api/v1/colaboradores', ['empresa_id' => $second['id'], 'cliente_id' => $sharon['id'], 'cuenta_id' => $account['id'], 'puesto' => 'Cajera', 'salario' => '1500.50'], $this->headers())->assertCreated();
-        self::assertSame(640050, Customer::findOrFail($sharon['id'])->ingreso_centavos, 'Two jobs: the income is the sum of both salaries.');
-        $this->getJson('/api/v1/clientes/'.$sharon['id'].'/acceso', $this->headers())->assertOk();
+        // A person is assigned to one company: she leaves the candidates list and cannot be assigned again.
+        $candidates = array_column($this->getJson('/api/v1/colaboradores/candidatos', $this->headers())->assertOk()->json('data'), 'id');
+        self::assertNotContains($sharon['id'], $candidates);
+        $this->postJson('/api/v1/colaboradores', ['empresa_id' => $second['id'], 'cliente_id' => $sharon['id'], 'cuenta_id' => $account['id'], 'puesto' => 'Cajera', 'salario' => '1500.50'], $this->headers())
+            ->assertConflict()->assertJsonPath('code', 'ALREADY_ASSIGNED')->assertJsonPath('message', 'Esa persona ya está asignada a la empresa Restaurante El buen sabor.');
+        self::assertSame(490000, Customer::findOrFail($sharon['id'])->ingreso_centavos);
     }
 
     public function test_old_account_closings_are_corrected_once_and_shown_as_outflows(): void
@@ -1405,5 +1408,16 @@ final class OperationsTest extends TestCase
         self::assertSame($total, (int) Account::sum('saldo_centavos'), 'The correction is double entry: the ledger total does not change.');
         $row = collect($this->getJson('/api/v1/dashboard', $this->headers())->json('data.concentradora.por_tipo'))->firstWhere('tipo', 'cierre_cuenta');
         self::assertSame(-10000, $row['entradas_centavos'] - $row['salidas_centavos'], 'Shown as −Q100.00.');
+    }
+
+    public function test_dashboard_counts_people_with_banca_access_and_recent_sign_ins(): void
+    {
+        Customer::create(['nombre' => 'Con acceso', 'dpi' => '4000000000011', 'email' => 'acceso@example.test', 'password' => Hash::make('clave2026'), 'active' => true]);
+        Customer::create(['nombre' => 'Bloqueado', 'dpi' => '4000000000012', 'email' => 'bloqueado@example.test', 'password' => Hash::make('clave2026'), 'active' => false]);
+        Customer::create(['nombre' => 'Sin acceso', 'dpi' => '4000000000013', 'email' => 'sin@example.test']);
+        $global = $this->getJson('/api/v1/dashboard', $this->headers())->assertOk()->json('data.global');
+        self::assertSame([1, 0], [$global['personas_con_acceso'], $global['ingresaron_24h']]);
+        $this->postJson('/api/v1/banca/auth/login', ['correo_electronico' => 'acceso@example.test', 'contrasena' => 'clave2026'], $this->headers(app(AuthService::class)->issueService('banca')))->assertOk();
+        self::assertSame(1, $this->getJson('/api/v1/dashboard', $this->headers())->json('data.global.ingresaron_24h'), 'Every Banca Virtual sign-in goes through Gestiones and is recorded.');
     }
 }

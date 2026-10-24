@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Exceptions\BusinessException;
 use App\Http\Requests\OperationRequest;
 use App\Models\Account;
+use App\Models\Collaborator;
 use App\Models\Company;
 use App\Models\Customer;
 use App\Models\User;
@@ -131,7 +132,9 @@ class PayrollController extends ApiController
      */
     public function candidates()
     {
-        $accounts = Account::whereNull('system_key')->whereNull('empresa_id')->where('estado', 'activa')->whereIn('tipo', ['ahorro', 'monetaria'])->get()->groupBy('cliente_id');
+        // People already assigned to a company do not appear: a person works for one company.
+        $assigned = Collaborator::where('activo', true)->pluck('cliente_id')->filter()->map(fn ($id): string => (string) $id)->all();
+        $accounts = Account::whereNull('system_key')->whereNull('empresa_id')->where('estado', 'activa')->whereIn('tipo', ['ahorro', 'monetaria'])->whereNotIn('cliente_id', $assigned)->get()->groupBy('cliente_id');
 
         return $this->ok(Customer::where('segmento', '!=', 'empresa')->whereIn('_id', $accounts->keys()->filter()->values()->all())->orderBy('nombre')->get()
             ->map(fn (Customer $c): array => ['id' => (string) $c->id, 'nombre' => $c->nombre, 'dpi_enmascarado' => $c->dpi_enmascarado, 'email' => $c->email,

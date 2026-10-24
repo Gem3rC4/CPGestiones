@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Exceptions\BusinessException;
 use App\Models\Account;
 use App\Models\Collaborator;
+use App\Models\Company;
 use App\Models\Customer;
 use App\Support\Money;
 
@@ -38,6 +39,11 @@ class CorporateService
         }
         if (Collaborator::where('empresa_id', (string) $company->id)->where('cliente_id', (string) $customer->id)->exists() || Collaborator::where('empresa_id', (string) $company->id)->where('cuenta_id', (string) $account->id)->exists()) {
             throw new BusinessException('Esa persona ya es colaboradora de la empresa.', 'DUPLICATE_COLLABORATOR');
+        }
+        // A person is assigned to one company only.
+        $elsewhere = Collaborator::where('cliente_id', (string) $customer->id)->where('activo', true)->first();
+        if ($elsewhere) {
+            throw new BusinessException('Esa persona ya está asignada a la empresa '.($elsewhere->empresa_nombre ?? Company::find($elsewhere->empresa_id)?->nombre ?? '').'.', 'ALREADY_ASSIGNED', 409);
         }
         $collaborator = Collaborator::create(['empresa_id' => (string) $company->id, 'empresa_nombre' => $company->nombre, 'cliente_id' => (string) $customer->id, 'nombre' => $customer->nombre, 'correo' => $customer->email,
             'puesto' => $data['puesto'], 'salario_centavos' => Money::cents($data['salario']), 'cuenta_id' => (string) $account->id, 'cuenta_numero' => $account->numero, 'cuenta_tipo' => $account->tipo, 'activo' => true]);

@@ -107,6 +107,74 @@ class AdminController extends ApiController
     }
 
     /**
+     * Corrects or updates the customer file (income, phone, a typo…). DPI and e-mail stay unique; once the
+     * customer uses Banca Virtual they are their sign-in data there, so they can no longer be changed here.
+     */
+    public function updateCustomer(OperationRequest $r, string $id)
+    {
+        return $this->mutation($r, function ($d, $a) use ($id): array {
+            $customer = Customer::where('segmento', '!=', 'empresa')->findOrFail($id);
+            $changes = [];
+            if (isset($d['email'])) {
+                $email = mb_strtolower(trim($d['email']));
+                if ($email !== mb_strtolower((string) $customer->email)) {
+                    if ($customer->password) {
+                        throw new BusinessException('El cliente ya inicia sesión en Banca Virtual con su correo; no se puede cambiar desde aquí.', 'APP_IDENTITY_LOCKED', 409);
+                    }
+                    if (Customer::where('email', $email)->where('_id', '!=', $customer->id)->exists()) {
+                        throw new BusinessException('Ya existe otro cliente con ese correo electrónico.', 'CUSTOMER_EXISTS', 409);
+                    }
+                    $changes['email'] = $email;
+                }
+            }
+            if (isset($d['dpi']) && $d['dpi'] !== $customer->dpi) {
+                if ($customer->password) {
+                    throw new BusinessException('El cliente ya usa Banca Virtual con este DPI; no se puede cambiar desde aquí.', 'APP_IDENTITY_LOCKED', 409);
+                }
+                $owner = app(CustomerRepository::class)->byDpi($d['dpi']);
+                if ($owner && (string) $owner->id !== (string) $customer->id) {
+                    throw new BusinessException('Ya existe otro cliente registrado con ese DPI.', 'CUSTOMER_EXISTS', 409);
+                }
+                $changes['dpi'] = $d['dpi'];
+            }
+            foreach (['nombres', 'apellidos'] as $field) {
+                if (isset($d[$field])) {
+                    $changes[$field] = trim(preg_replace('/\s+/u', ' ', $d[$field]));
+                }
+            }
+            if (isset($changes['nombres']) || isset($changes['apellidos'])) {
+                $changes['nombre'] = trim(($changes['nombres'] ?? $customer->nombres).' '.($changes['apellidos'] ?? $customer->apellidos));
+            }
+            if (isset($d['nit'])) {
+                $changes['nit'] = mb_strtoupper($d['nit']);
+            }
+            foreach (['telefono', 'fecha_nacimiento'] as $field) {
+                if (isset($d[$field])) {
+                    $changes[$field] = $d[$field];
+                }
+            }
+            if (isset($d['ingreso_mensual'])) {
+                $changes['ingreso_centavos'] = Money::cents($d['ingreso_mensual'], true);
+            }
+            if (isset($d['antiguedad_laboral_meses'])) {
+                $changes['antiguedad_laboral_meses'] = (int) $d['antiguedad_laboral_meses'];
+            }
+            $changes = array_filter($changes, fn ($value, $field): bool => $customer->{$field} !== $value, ARRAY_FILTER_USE_BOTH);
+            $birth = $changes['fecha_nacimiento'] ?? $customer->fecha_nacimiento;
+            $months = $changes['antiguedad_laboral_meses'] ?? $customer->antiguedad_laboral_meses;
+            if ($birth && $months !== null && (isset($changes['fecha_nacimiento']) || isset($changes['antiguedad_laboral_meses']))) {
+                app(BankRegistrationService::class)->assertSeniority($birth, (int) $months);
+            }
+            if ($changes !== []) {
+                $customer->update($changes + ['perfil_version' => (int) ($customer->perfil_version ?? 0) + 1]);
+                app(SecurityService::class)->record('cliente_actualizado', $a, ['cliente_id' => (string) $customer->id, 'campos' => array_values(array_diff(array_keys($changes), ['nombre']))]);
+            }
+
+            return $customer->refresh()->toArray() + ['campos_actualizados' => array_values(array_diff(array_keys($changes), ['nombre']))];
+        });
+    }
+
+    /**
      * What the customer still has in the bank, so the panel can warn before deleting (never blocks it).
      */
     public function deletionSummary(string $id, CustomerDeletionService $service)

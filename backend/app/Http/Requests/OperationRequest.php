@@ -30,6 +30,11 @@ class OperationRequest extends FormRequest
                 'nit' => ['required', 'string', 'max:20', 'regex:/^[0-9]{1,12}-?[0-9Kk]$/D'], 'telefono' => ['required', 'string', 'regex:/^[0-9+][0-9 -]{7,19}$/D'],
                 'fecha_nacimiento' => 'required|date_format:Y-m-d|after_or_equal:1900-01-01|before_or_equal:'.now('America/Guatemala')->subYears(18)->toDateString(), 'ingreso_mensual' => $money,
                 'antiguedad_laboral_meses' => 'required|integer|min:0|max:1500'],
+            // Editing the customer file: only the fields sent change, with the same rules as when it was registered.
+            'clientes.update' => ['nombres' => ['sometimes', 'string', 'max:75', $name], 'apellidos' => ['sometimes', 'string', 'max:74', $name], 'email' => 'sometimes|email|max:180', 'dpi' => 'sometimes|string|regex:/^[0-9]{13}$/D',
+                'nit' => ['sometimes', 'string', 'max:20', 'regex:/^[0-9]{1,12}-?[0-9Kk]$/D'], 'telefono' => ['sometimes', 'string', 'regex:/^[0-9+][0-9 -]{7,19}$/D'],
+                'fecha_nacimiento' => 'sometimes|date_format:Y-m-d|after_or_equal:1900-01-01|before_or_equal:'.now('America/Guatemala')->subYears(18)->toDateString(),
+                'ingreso_mensual' => ['sometimes', 'string', 'regex:/^(0|[1-9][0-9]{0,9})(\.[0-9]{1,2})?$/D'], 'antiguedad_laboral_meses' => 'sometimes|integer|min:0|max:1500'],
             // The opening amount (minimum Q100.00) becomes the first balance of the account.
             'cuentas.store' => ['cliente_id' => $id, 'producto' => 'required|in:ahorro,monetaria', 'monto_apertura' => $money] + $scope,
             'cuentas.state' => ['estado' => 'required|in:activa,bloqueada,cerrada', 'nota' => 'required|string|min:5|max:500'],
@@ -74,7 +79,7 @@ class OperationRequest extends FormRequest
     {
         $passwords = match ($this->route()?->getName()) {
             'clientes.contrasena' => BankRegistrationRequest::passwordMessages('contrasena'),
-            'clientes.store' => ['fecha_nacimiento.before_or_equal' => 'El cliente debe ser mayor de edad (18 años o más).', 'fecha_nacimiento.date_format' => 'Usa una fecha válida (AAAA-MM-DD).', 'nombres.regex' => 'Usa solo letras.', 'apellidos.regex' => 'Usa solo letras.', 'telefono.regex' => 'Escribe un teléfono válido, por ejemplo 5555-1234.', 'dpi.regex' => 'El DPI debe tener exactamente 13 dígitos.', 'antiguedad_laboral_meses.max' => 'Usa un número de meses válido.'],
+            'clientes.store', 'clientes.update' => ['fecha_nacimiento.before_or_equal' => 'El cliente debe ser mayor de edad (18 años o más).', 'fecha_nacimiento.date_format' => 'Usa una fecha válida (AAAA-MM-DD).', 'nombres.regex' => 'Usa solo letras.', 'apellidos.regex' => 'Usa solo letras.', 'telefono.regex' => 'Escribe un teléfono válido, por ejemplo 5555-1234.', 'dpi.regex' => 'El DPI debe tener exactamente 13 dígitos.', 'antiguedad_laboral_meses.max' => 'Usa un número de meses válido.'],
             'cuentas.store' => ['monto_apertura.regex' => 'Escribe el monto con hasta dos decimales, por ejemplo 100.00.', 'producto.in' => 'Selecciona cuenta de ahorro o monetaria.'],
             'usuarios.contrasena', 'empresas.store', 'empresas.usuarios', 'empresas.usuarios.contrasena' => ['contrasena.min' => 'Usa al menos 12 caracteres.', 'contrasena.regex' => 'Incluye al menos una mayúscula, una minúscula y un número.'],
             default => [],

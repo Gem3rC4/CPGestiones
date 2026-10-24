@@ -66,6 +66,14 @@ export function formSpec(kind, item, lookups) {
    warning:'Esta acción no se puede deshacer. Se borran todos los clientes, empresas, cuentas, movimientos, tarjetas, préstamos, gestiones y planillas, y se pide a Banca Virtual borrar sus clientes. Se conservan productos, políticas, integraciones y usuarios del banco.',
    description:'La cuenta concentradora vuelve a sus fondos iniciales y las demás cuentas internas a Q0.00. Escribe ELIMINAR TODO para confirmar.',
    fields:[text('confirmacion','Confirmación',{placeholder:'ELIMINAR TODO',pattern:'ELIMINAR TODO',full:true})]}
+  case 'editar-cliente': { const adult=new Date(); adult.setFullYear(adult.getFullYear()-18); const app=Boolean(item.acceso_app); return {title:`Editar a ${item.nombre}`,path:`/clientes/${id}`,method:'PATCH',submitLabel:'Guardar cambios',
+   description:app ? 'Corrige o actualiza los datos del cliente. El DPI y el correo no se pueden cambiar porque el cliente ya los usa para entrar a Banca Virtual.' : 'Corrige o actualiza los datos del cliente. Solo se guardan los campos que cambies.',
+   fields:[text('nombres','Nombre',{maxLength:75,value:item.nombres || ''}),text('apellidos','Apellido',{maxLength:74,value:item.apellidos || ''}),
+    ...(app ? [] : [text('email','Correo electrónico',{type:'email',value:item.email || ''}),text('dpi','DPI',{pattern:'[0-9]{13}',maxLength:13,inputmode:'numeric',optional:true,placeholder:item.dpi_enmascarado || '13 dígitos',help:'Déjalo vacío para conservar el actual. Escríbelo completo solo si quieres corregirlo.'})]),
+    text('nit','NIT',{maxLength:20,value:item.nit || ''}),text('telefono','Teléfono',{type:'tel',maxLength:20,value:item.telefono || ''}),
+    text('fecha_nacimiento','Fecha de nacimiento',{type:'date',max:adult.toISOString().slice(0,10),value:item.fecha_nacimiento || ''}),
+    amount('ingreso_mensual','Ingreso mensual (Q)',{value:item.ingreso_centavos == null ? '' : (item.ingreso_centavos/100).toFixed(2)}),
+    text('antiguedad_laboral_meses','Meses laborando',{type:'number',min:0,max:1500,value:item.antiguedad_laboral_meses ?? ''})]} }
   case 'eliminar-cliente': { const s=item.resumen || {}; return {title:`Eliminar a ${item.nombre}`,path:`/clientes/${id}/eliminar`,submitLabel:'Eliminar definitivamente',danger:true,
    warning:s.tiene_saldo_o_deuda ? 'Atención: Este cliente tiene saldo en sus cuentas o deudas activas. ¿Está seguro de que desea eliminarlo de forma definitiva?' : '',
    description:`Saldo en cuentas: ${money(s.saldo_centavos)} · Deuda en préstamos: ${money(s.deuda_prestamos_centavos)} · Deuda en tarjetas: ${money(s.deuda_tarjetas_centavos)}. Se borran definitivamente el cliente, su acceso a Banca Virtual, sus ${s.cuentas || 0} cuenta(s) con sus movimientos, tarjetas, préstamos y gestiones. El saldo regresa a la cuenta concentradora y las deudas se dan de baja. Después podrás registrarlo de nuevo con el mismo DPI y correo.`,

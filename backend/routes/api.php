@@ -65,6 +65,7 @@ Route::prefix('v1')->group(function () {
         $post('/usuarios', AdminController::class, 'user', 'usuarios.store', 'usuarios.write');
         Route::patch('/usuarios/{id}', [AdminController::class, 'updateUser'])->name('usuarios.update')->middleware('permit:usuarios.write');
         $post('/clientes', AdminController::class, 'customer', 'clientes.store', 'clientes.write');
+        Route::patch('/clientes/{id}', [AdminController::class, 'updateCustomer'])->name('clientes.update')->middleware('permit:clientes.write')->where('id', '[a-f0-9]{24}');
         $post('/cuentas', AccountController::class, 'store', 'cuentas.store', 'cuentas.write');
         Route::patch('/cuentas/{id}/estado', [AccountController::class, 'state'])->name('cuentas.state')->middleware('permit:cuentas.manage');
         Route::get('/cuentas/{id}/movimientos', [AccountController::class, 'movements'])->middleware('permit:cuentas.read');

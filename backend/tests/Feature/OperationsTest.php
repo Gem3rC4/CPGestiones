@@ -1338,4 +1338,36 @@ final class OperationsTest extends TestCase
         self::assertSame('pagado', $credit->refresh()->estado);
         self::assertSame($start, $vault(), 'Liquidating the loan returns the capital to the vault.');
     }
+
+    public function test_staff_edit_the_customer_file_keeping_dpi_and_email_unique(): void
+    {
+        $base = ['nombres' => 'Estefani', 'apellidos' => 'Montes', 'email' => 'emontes@example.test', 'dpi' => '3000000002323', 'nit' => '775566443', 'telefono' => '56451236', 'fecha_nacimiento' => '2001-03-02', 'ingreso_mensual' => '6000.00', 'antiguedad_laboral_meses' => 18];
+        $client = $this->postJson('/api/v1/clientes', $base, $this->headers())->assertCreated()->json('data');
+        $this->postJson('/api/v1/clientes', ['email' => 'otra@example.test', 'dpi' => '3000000009999'] + $base, $this->headers())->assertCreated();
+        $url = '/api/v1/clientes/'.$client['id'];
+
+        // New income and phone, and a typo in the last name.
+        $this->patchJson($url, ['ingreso_mensual' => '7500.50', 'telefono' => '88556633', 'apellidos' => 'Montes  López'], $this->headers())->assertOk()
+            ->assertJsonPath('data.ingreso_centavos', 750050)->assertJsonPath('data.telefono', '88556633')->assertJsonPath('data.nombre', 'Estefani Montes López')
+            ->assertJsonPath('data.campos_actualizados', ['apellidos', 'telefono', 'ingreso_centavos']);
+        self::assertSame(2, Customer::findOrFail($client['id'])->perfil_version);
+        // Nothing changed: nothing is written.
+        $this->patchJson($url, ['telefono' => '88556633'], $this->headers())->assertOk()->assertJsonPath('data.campos_actualizados', []);
+        // A wrong DPI typed at the branch can be fixed, but never to another customer's DPI or e-mail.
+        $this->patchJson($url, ['dpi' => '3000000009999'], $this->headers())->assertConflict()->assertJsonPath('code', 'CUSTOMER_EXISTS');
+        $this->patchJson($url, ['email' => 'OTRA@example.test'], $this->headers())->assertConflict()->assertJsonPath('code', 'CUSTOMER_EXISTS');
+        $this->patchJson($url, ['dpi' => '3000000002324', 'email' => 'estefani@example.test'], $this->headers())->assertOk();
+        self::assertSame(['3000000002324', 'estefani@example.test'], [Customer::findOrFail($client['id'])->dpi, Customer::findOrFail($client['id'])->email]);
+        // Same rules as when registering.
+        $this->patchJson($url, ['fecha_nacimiento' => '2015-01-01'], $this->headers())->assertUnprocessable()->assertJsonValidationErrors('fecha_nacimiento');
+        $this->patchJson($url, ['antiguedad_laboral_meses' => 400], $this->headers())->assertUnprocessable()->assertJsonValidationErrors('antiguedad_laboral_meses');
+        $this->patchJson($url, ['ingreso_mensual' => '-1'], $this->headers())->assertUnprocessable()->assertJsonValidationErrors('ingreso_mensual');
+
+        // Once the customer uses Banca Virtual, DPI and e-mail are their sign-in data there.
+        Customer::findOrFail($client['id'])->update(['password' => Hash::make('clave2026')]);
+        $this->patchJson($url, ['email' => 'nuevo@example.test'], $this->headers())->assertConflict()->assertJsonPath('code', 'APP_IDENTITY_LOCKED');
+        $this->patchJson($url, ['dpi' => '3000000002325'], $this->headers())->assertConflict()->assertJsonPath('code', 'APP_IDENTITY_LOCKED');
+        $this->patchJson($url, ['ingreso_mensual' => '8000.00'], $this->headers())->assertOk()->assertJsonPath('data.ingreso_centavos', 800000);
+        $this->patchJson($url, ['telefono' => '55555555'], $this->headers($this->token($this->user('operador', 'ops-edit'))))->assertForbidden();
+    }
 }
